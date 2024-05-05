@@ -12,10 +12,10 @@ static const char *log_level_strings[] = {
 static const char *log_level_colors[] = {
 	"\x1b[94m", "\x1b[36m", "\x1b[32m", "\x1b[33m", "\x1b[31m", "\x1b[35m"};
 
-void __attribute__((weak)) log_send_data(const char *msg, uint32_t msg_len)
-{
-	return;
-}
+// void __attribute__((weak)) log_send_data(const char *msg, uint32_t msg_len)
+// {
+// 	return;
+// }
 
 uint32_t __attribute__((weak)) log_get_time()
 {
