@@ -6,7 +6,8 @@
 
 #define TMC_FREQ_TO_RPM (1)
 
-typedef enum {
+typedef enum
+{
     TMC_MICROSTEP_HALF = 1,
     TMC_MICROSTEP_QUARTER = 2,
     TMC_MICROSTEP_EIGHTH = 3,
@@ -16,11 +17,12 @@ typedef enum {
 void tmc_set_enable(bool en);
 void tmc_set_dir(bool en);
 void tmc_set_stp(uint32_t frequency_hz);
-void tmc_uart_tx(uint8_t * data, uint32_t len);
-uint32_t tmc_uart_rx(uint8_t * data, uint32_t len);
+void tmc_uart_tx(uint8_t *data, uint32_t len);
+uint32_t tmc_uart_rx(uint8_t *data, uint32_t len);
 void tmc_set_ms1(bool en);
 void tmc_set_ms2(bool en);
 
+void tmc_init(tmc_microstepping_t stepping, uint32_t steps_per_rev);
 void tmc_start(float speed_rpm);
 void tmc_stop(void);
 void tmc_set_microstepping(tmc_microstepping_t stepping);

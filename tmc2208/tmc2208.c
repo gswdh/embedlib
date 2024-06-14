@@ -3,13 +3,16 @@
 #include <math.h>
 
 static tmc_microstepping_t tmc_microstepping = TMC_MICROSTEP_HALF;
-static float tmc_speed_rpm = 0;
+static uint32_t tmc_steps_per_rev = 400;
+
+void tmc_init(tmc_microstepping_t stepping, uint32_t steps_per_rev)
+{
+    tmc_microstepping = stepping;
+    tmc_steps_per_rev = steps_per_rev;
+}
 
 void tmc_start(float speed_rpm)
 {
-    // Update the local
-    tmc_speed_rpm = speed_rpm;
-
     // Make sure the microstepping is correct
     tmc_set_microstepping(tmc_microstepping);
 
@@ -17,7 +20,7 @@ void tmc_start(float speed_rpm)
     tmc_set_dir((speed_rpm > 0) ? true : false);
 
     // Calculate the output PWM freuqency
-    uint32_t frequency = (uint32_t)(fabs(speed_rpm) * TMC_FREQ_TO_RPM * pow(2, tmc_microstepping));
+    uint32_t frequency = (uint32_t)(fabs(speed_rpm) * tmc_steps_per_rev * pow(2, tmc_microstepping) / 60.0);
 
     // Set the output frequency
     tmc_set_stp(frequency);
@@ -29,7 +32,7 @@ void tmc_start(float speed_rpm)
 void tmc_stop(void)
 {
     // Disable the driver (it's inverted)
-    tmc_set_enable(false);
+    tmc_set_enable(true);
 }
 
 void tmc_set_microstepping(tmc_microstepping_t stepping)
