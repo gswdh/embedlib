@@ -21,8 +21,8 @@ typedef enum
 typedef struct
 {
     uint16_t addr;
-    uint16_t mask;
     uint16_t data;
+    uint16_t mask;
 } ar_reg_write_t;
 
 #define AR_I2C_DEV_ADDR (0x55)
