@@ -8,37 +8,28 @@
 #ifndef __LOG_H__
 #define __LOG_H__
 
-#include <stdio.h>
 #include <stdarg.h>
-#include <stdbool.h>
-#include <time.h>
-#include <string.h>
+#include <stdint.h>
 
-typedef enum
-{
-	LOG_TRACE,
-	LOG_DEBUG,
-	LOG_INFO,
-	LOG_WARN,
-	LOG_ERROR,
-	LOG_FATAL,
-	LOG_LEVEL_MAX
-} log_level_t;
+// Logging levels
+#define LOG_LEVEL_TRACE 0
+#define LOG_LEVEL_DEBUG 1
+#define LOG_LEVEL_INFO 2
+#define LOG_LEVEL_WARN 3
+#define LOG_LEVEL_ERROR 4
+#define LOG_LEVEL_FATAL 5
 
-#define log_trace(TAG, ...) log_log(TAG, LOG_TRACE, __FILE__, __LINE__, __VA_ARGS__)
-#define log_debug(TAG, ...) log_log(TAG, LOG_DEBUG, __FILE__, __LINE__, __VA_ARGS__)
-#define log_info(TAG, ...) log_log(TAG, LOG_INFO, __FILE__, __LINE__, __VA_ARGS__)
-#define log_warn(TAG, ...) log_log(TAG, LOG_WARN, __FILE__, __LINE__, __VA_ARGS__)
-#define log_error(TAG, ...) log_log(TAG, LOG_ERROR, __FILE__, __LINE__, __VA_ARGS__)
-#define log_fatal(TAG, ...) log_log(TAG, LOG_FATAL, __FILE__, __LINE__, __VA_ARGS__)
+// Macros to simplify logging at different levels
+#define log_trace(tag, ...) log_message(LOG_LEVEL_TRACE, tag, __VA_ARGS__)
+#define log_debug(tag, ...) log_message(LOG_LEVEL_DEBUG, tag, __VA_ARGS__)
+#define log_info(tag, ...) log_message(LOG_LEVEL_INFO, tag, __VA_ARGS__)
+#define log_warn(tag, ...) log_message(LOG_LEVEL_WARN, tag, __VA_ARGS__)
+#define log_error(tag, ...) log_message(LOG_LEVEL_ERROR, tag, __VA_ARGS__)
+#define log_fatal(tag, ...) log_message(LOG_LEVEL_FATAL, tag, __VA_ARGS__)
 
-void __attribute__((weak)) log_send_data(const char *msg, uint32_t msg_len);
-uint32_t __attribute__((weak)) log_get_time();
-
-void log_set_level(log_level_t level);
-void log_log(const char *tag, log_level_t level, const char *file, int line, const char *fmt, ...);
-
-void log_create_bar(const char * name, const char * units, float low_limit, float high_limit);
-void log_set_bar(const char * name, float value);
+void log_transmit(const char *log);
+uint32_t log_get_time();
+void log_set_level(int level);
+void log_message(int level, const char *tag, const char *fmt, ...);
 
 #endif

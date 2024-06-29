@@ -104,19 +104,10 @@ def update_display(objects: dict):
 @click.option("--port", type=str, help="Serial port name")
 @click.option("--baud", default=115200, type=int, help="Serial port baudrate")
 def main(port, baud):
-    mp.set_start_method("spawn")
-    data_queue = mp.Queue()
-
-    # Gathers data and sends to the display task
-    port_process = mp.Process(target=port_task, args=(port, baud, data_queue))
-    port_process.start()
-
-    # Takes python dicts and renders them on the terminal
-    display_process = mp.Process(target=display_task, args=(data_queue,))
-    display_process.start()
-
-    port_process.join()
-    display_process.join()
+    ser = serial.Serial(port=port, baudrate=baud)
+    while True:
+        line = ser.readline()
+        print(line.decode(), end="")
 
 
 if __name__ == "__main__":

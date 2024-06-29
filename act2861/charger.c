@@ -4,10 +4,8 @@
 
 #include "act_configs.h"
 
-#define DEBUG
-
 #ifdef DEBUG
-#include "log.h"
+#include "logging.h"
 #define LOG_TAG "CHRG"
 #endif
 
@@ -33,7 +31,7 @@ uint16_t get_otg_reg(float voltage)
 	return reg;
 }
 
-act_error CHRG_PollForOTGMode(uint32_t timeout)
+act_error_t CHRG_PollForOTGMode(uint32_t timeout)
 {
 #ifdef DEBUG
 	log_info(LOG_TAG, "CHRG_PollForOTGMode: Start OTG poll.\n");
@@ -75,7 +73,7 @@ act_error CHRG_PollForOTGMode(uint32_t timeout)
 	return ACT_OK;
 }
 
-act_error CHRG_VerifyCHGMode()
+act_error_t CHRG_VerifyCHGMode()
 {
 	// Check the system status for the charging mode
 	uint8_t chg_status = 0;
@@ -107,12 +105,11 @@ act_error CHRG_VerifyCHGMode()
 #ifdef DEBUG
 		log_info(LOG_TAG, "CHRG_VerifyCHGMode: Charging failed, in reset state.\n");
 #endif
-
 		break;
 
 	case CHRG_STAT_COND:
 
-		status = ACT_OK;
+		status = ACT_CHG_IN_PROGRESS;
 
 #ifdef DEBUG
 		log_info(LOG_TAG, "CHRG_VerifyCHGMode: Battery being conditioned, low VBAT or short detected.\n");
@@ -121,7 +118,7 @@ act_error CHRG_VerifyCHGMode()
 
 	case CHRG_STAT_SUS:
 
-		status = ACT_OK;
+		status = ACT_CHG_IN_PROGRESS;
 
 #ifdef DEBUG
 		log_info(LOG_TAG, "CHRG_VerifyCHGMode: Conditioning suspended.\n");
@@ -131,7 +128,7 @@ act_error CHRG_VerifyCHGMode()
 
 	case CHRG_STAT_PCOND:
 
-		status = ACT_OK;
+		status = ACT_CHG_IN_PROGRESS;
 
 #ifdef DEBUG
 		log_info(LOG_TAG, "CHRG_VerifyCHGMode: Battery being preconditioned at IPRECHG.\n");
@@ -140,7 +137,7 @@ act_error CHRG_VerifyCHGMode()
 
 	case CHRG_STAT_PCSUS:
 
-		status = ACT_OK;
+		status = ACT_CHG_IN_PROGRESS;
 
 #ifdef DEBUG
 		log_info(LOG_TAG, "CHRG_VerifyCHGMode: Preconditioned at IPRECHG suspended.\n");
@@ -150,7 +147,7 @@ act_error CHRG_VerifyCHGMode()
 
 	case CHRG_STAT_FAST:
 
-		status = ACT_OK;
+		status = ACT_CHG_IN_PROGRESS;
 
 #ifdef DEBUG
 		log_info(LOG_TAG, "CHRG_VerifyCHGMode: Charging at full current.\n");
@@ -160,7 +157,7 @@ act_error CHRG_VerifyCHGMode()
 
 	case CHRG_STAT_FSUS:
 
-		status = ACT_OK;
+		status = ACT_CHG_IN_PROGRESS;
 
 #ifdef DEBUG
 		log_info(LOG_TAG, "CHRG_VerifyCHGMode: Charging at full current suspended.\n");
@@ -170,7 +167,7 @@ act_error CHRG_VerifyCHGMode()
 
 	case CHRG_STAT_FULL:
 
-		status = ACT_OK;
+		status = ACT_CHG_DONE;
 
 #ifdef DEBUG
 		log_info(LOG_TAG, "CHRG_VerifyCHGMode: Charging complete.\n");
@@ -180,7 +177,7 @@ act_error CHRG_VerifyCHGMode()
 
 	case CHRG_STAT_CFSUS:
 
-		status = ACT_OK;
+		status = ACT_CHG_DONE;
 
 #ifdef DEBUG
 		log_info(LOG_TAG, "CHRG_VerifyCHGMode: Charging complete suspended.\n");
@@ -190,7 +187,7 @@ act_error CHRG_VerifyCHGMode()
 
 	case CHRG_STAT_TERM:
 
-		status = ACT_OK;
+		status = ACT_CHG_IN_PROGRESS;
 
 #ifdef DEBUG
 		log_info(LOG_TAG, "CHRG_VerifyCHGMode: Charging complete, monitoring battery voltage.\n");
@@ -200,7 +197,7 @@ act_error CHRG_VerifyCHGMode()
 
 	case CHRG_STAT_TSUS:
 
-		status = ACT_OK;
+		status = ACT_CHG_IN_PROGRESS;
 
 #ifdef DEBUG
 		log_info(LOG_TAG, "CHRG_VerifyCHGMode: monitoring battery voltage suspended.\n");
@@ -222,7 +219,7 @@ act_error CHRG_VerifyCHGMode()
 	return status;
 }
 
-act_error CHRG_VerifyOTGMode(uint32_t timeout)
+act_error_t CHRG_VerifyOTGMode(uint32_t timeout)
 {
 #ifdef DEBUG
 	log_info(LOG_TAG, "CHRG_VerifyOTGMode: Starting polling.\n");
@@ -369,7 +366,7 @@ act_error CHRG_VerifyOTGMode(uint32_t timeout)
 	return ACT_OK;
 }
 
-act_error CHRG_EnableCharging(float max_charge_current, float max_input_current)
+act_error_t CHRG_EnableCharging(float max_charge_current, float max_input_current)
 {
 #ifdef DEBUG
 	log_info(LOG_TAG, "CHRG_EnableCharging: Entering charging mode.\n");
@@ -431,11 +428,11 @@ act_error CHRG_EnableCharging(float max_charge_current, float max_input_current)
 
 	// Wait for the charging mode to start
 	act_delay_ms(300);
-	
+
 	// Get the status
 	status = CHRG_VerifyCHGMode();
 
-	if (status != ACT_OK)
+	if (status != ACT_OK && status != ACT_CHG_IN_PROGRESS)
 	{
 #ifdef DEBUG
 		log_info(LOG_TAG, "CHRG_EnableCharging: Entered charge mode unsuccessfully. Error code = %u.\n", status);
@@ -460,7 +457,7 @@ act_error CHRG_EnableCharging(float max_charge_current, float max_input_current)
 	return ACT_OK;
 }
 
-act_error CHRG_EnterOTG(float voltage, float max_current)
+act_error_t CHRG_EnterOTG(float voltage, float max_current)
 {
 #ifdef DEBUG
 	log_info(LOG_TAG, "CHRG_EnterOTG: Entering On-The-Go mode.\n");
@@ -573,7 +570,7 @@ act_error CHRG_EnterOTG(float voltage, float max_current)
 	return ACT_OK;
 }
 
-act_error CHRG_EnterIdle()
+act_error_t CHRG_EnterIdle()
 {
 #ifdef DEBUG
 	log_info(LOG_TAG, "CHRG_EnableIdle: Entering Idle mode.\n");
@@ -616,7 +613,7 @@ act_error CHRG_EnterIdle()
 	return ACT_OK;
 }
 
-act_error CHRG_EnterHiZ()
+act_error_t CHRG_EnterHiZ()
 {
 #ifdef DEBUG
 	log_info(LOG_TAG, "CHRG_EnterHiZ: Entering HiZ mode.\n");
@@ -643,7 +640,7 @@ act_error CHRG_EnterHiZ()
 	return ACT_OK;
 }
 
-act_error CHRG_Reset()
+act_error_t CHRG_Reset()
 {
 #ifdef DEBUG
 	log_info(LOG_TAG, "ACT_Reset: Reseting device.\n");
@@ -672,13 +669,13 @@ act_error CHRG_Reset()
 	return ACT_OK;
 }
 
-act_error CHRG_GetStatus()
+act_error_t CHRG_GetStatus()
 {
 
 	return ACT_OK;
 }
 
-act_error CHRG_ClearIRQs()
+act_error_t CHRG_ClearIRQs()
 {
 #ifdef DEBUG
 	log_info(LOG_TAG, "CHRG_ClearIRQs: Clearing IRQs.\n");
@@ -704,7 +701,7 @@ act_error CHRG_ClearIRQs()
 	return ACT_OK;
 }
 
-act_error CHRG_IRQHandler(uint8_t state)
+act_error_t CHRG_IRQHandler(uint8_t state)
 {
 	// Read the status register
 	uint8_t data[33];
@@ -824,30 +821,30 @@ void CHRG_PrintRegisters()
 #endif
 }
 /*
-   act_error CHRG_GetVBAT(float *vbat)
+   act_error_t CHRG_GetVBAT(float *vbat)
    {
-        // Read the status register
-        uint8_t data[2];
-        uint8_t status = act_read_regs(ACT_ADC_1, 2, data);
+		// Read the status register
+		uint8_t data[2];
+		uint8_t status = act_read_regs(ACT_ADC_1, 2, data);
 
-        // Check result
-        if (status != ACT_OK)
-        {
+		// Check result
+		if (status != ACT_OK)
+		{
  #ifdef DEBUG
-                log_info(LOG_TAG, "CHRG_GetVBAT: Could not read registers via I2C. %u.\n", status);
+				log_info(LOG_TAG, "CHRG_GetVBAT: Could not read registers via I2C. %u.\n", status);
  #endif
-                return status;
-        }
+				return status;
+		}
 
-        // Work out output value
-        uint16_t adc_out = (data[0] << 6) + data[1];
+		// Work out output value
+		uint16_t adc_out = (data[0] << 6) + data[1];
  * vbat = 0.01527 * ((adc_out >> 2) - 2048);
 
-        return ACT_OK;
+		return ACT_OK;
    }
  */
 
-act_error CHRG_ADCReadMUX(uint8_t adc_read_channel)
+act_error_t CHRG_ADCReadMUX(uint8_t adc_read_channel)
 {
 	uint8_t status = ACT_OK;
 
@@ -871,7 +868,7 @@ act_error CHRG_ADCReadMUX(uint8_t adc_read_channel)
 	return status;
 }
 
-act_error CHRG_ReadADC(uint8_t adc_read_channel, uint16_t *adc_val)
+act_error_t CHRG_ReadADC(uint8_t adc_read_channel, uint16_t *adc_val)
 {
 	uint8_t status = ACT_OK;
 
@@ -897,7 +894,7 @@ act_error CHRG_ReadADC(uint8_t adc_read_channel, uint16_t *adc_val)
 	return status;
 }
 
-act_error CHRG_GetADCResults(CHRG_ADCResults *res)
+act_error_t CHRG_GetADCResults(CHRG_ADCResults *res)
 {
 	uint16_t adc_values[7] = {0};
 	uint8_t status = ACT_OK;
@@ -925,7 +922,7 @@ act_error CHRG_GetADCResults(CHRG_ADCResults *res)
 	res->v_in_volts = 0.02035 * ((float)(adc_values[1] >> 2) - 2048);
 	res->v_bat_volts = 0.01527 * ((float)(adc_values[2] >> 2) - 2048);
 	res->i_bat_amps = klim * 0.7633 * ((float)(adc_values[3] >> 2) - 2048) / 0.01 / 20e3;
-	res->t_th_celcius = 0.003053 * ((float)(adc_values[4] >> 2) - 2048);                                                                     // From ADC to volts
+	res->t_th_celcius = 0.003053 * ((float)(adc_values[4] >> 2) - 2048);									 // From ADC to volts
 	res->t_th_celcius = (12.3 * res->t_th_celcius * res->t_th_celcius) + (-63 * res->t_th_celcius) + (70.5); // From volts to celcius
 	res->t_die_celcius = (0.2707 * (float)(adc_values[5] >> 2)) - 809.49;
 	res->v_adc_volts = 0.01527 * ((float)(adc_values[6] >> 2) - 2048);

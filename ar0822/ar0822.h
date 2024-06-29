@@ -25,7 +25,7 @@ typedef struct
     uint16_t mask;
 } ar_reg_write_t;
 
-#define AR_I2C_DEV_ADDR (0x55)
+#define AR_I2C_DEV_ADDR (0x10)
 
 // Interface functions
 void ar_set_nrst(const bool en);
@@ -34,6 +34,7 @@ void ar_enable_clock(const bool en);
 uint8_t ar_get_gpio(void);
 ar_error_t ar_i2c_write(const uint16_t reg, const uint8_t *data, const uint32_t len);
 ar_error_t ar_i2c_read(const uint16_t reg, const uint8_t *data, const uint32_t len);
+void ar_delay_ms(const uint32_t time_ms);
 
 // Driver functions
 ar_error_t ar_init(const ar_reg_write_t *config, uint32_t len);

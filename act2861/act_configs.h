@@ -88,7 +88,7 @@ const uint8_t act_chg_conf[] = {
 	0xA0, // 9
 	0x12, // A
 	0xB0, // B
-	0x40, // C
+	0x7F, // C
 	0xE8, // D
 	0x00, // E
 	0x00, // F
@@ -108,10 +108,7 @@ const uint8_t act_chg_conf[] = {
 	0x81, // 1D
 	0x00, // 1E
 	0x00, // 1F
-	0x00 // 20
+	0x00  // 20
 };
-
-
-
 
 #endif

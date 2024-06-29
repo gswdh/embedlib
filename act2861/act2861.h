@@ -40,7 +40,7 @@
 #define ACT_IRQ_CONT_2 0x1F
 #define ACT_OTG_STATUS 0x20
 
-#define CHRG_STAT_RST (0x00) 
+#define CHRG_STAT_RST (0x00)
 #define CHRG_STAT_COND (0x01)
 #define CHRG_STAT_SUS (0x02)
 #define CHRG_STAT_PCOND (0x03)
@@ -52,30 +52,34 @@
 #define CHRG_STAT_TERM (0x09)
 #define CHRG_STAT_TSUS (0x0A)
 #define CHRG_STAT_FAULT (0x0B)
-	
-typedef enum {ACT_OK,
-	ACT_I2C_MEM_WRITE_ERROR,   
-	ACT_I2C_MEM_ADDR_ERROR,    
-	ACT_I2C_MEM_POINTER_ERROR, 
-	ACT_OTG_VOLTAGE_OOR,       
-	ACT_FAILED_OTG_MODE,       
-	ACT_FAILED_CHG_MODE,       
-	ACT_HIGH_VBAT_ERROR,     
-	ACT_CHG_DONE,                    
-	ACT_INPUT_VOLTAGE_ERROR, 
-	ACT_SAFETY_TIMER_ERROR,   
-	ACT_HIZ_MODE_ERROR,               
-	ACT_LOW_VBAT_ERROR,               
-	ACT_BAT_TEMP_ERROR,               
-	ACT_FET_OC_ERROR,                 
-	ACT_OVER_TEMP_ERROR,      
-	ACT_HIZMODE_ERROR,                
-	ACT_READ_VBAT_ERROR,      
-	ACT_LOW_VBAT,                     
-	ACT_MUX_ERROR} act_error;
 
-act_error act_write_regs(uint8_t addr, uint8_t *data, uint8_t len);
-act_error act_read_regs(uint8_t addr, uint8_t *data, uint8_t len);
+typedef enum
+{
+	ACT_OK = 0,
+	ACT_I2C_MEM_WRITE_ERROR,
+	ACT_I2C_MEM_ADDR_ERROR,
+	ACT_I2C_MEM_POINTER_ERROR,
+	ACT_OTG_VOLTAGE_OOR,
+	ACT_FAILED_OTG_MODE,
+	ACT_FAILED_CHG_MODE,
+	ACT_HIGH_VBAT_ERROR,
+	ACT_CHG_DONE,
+	ACT_INPUT_VOLTAGE_ERROR,
+	ACT_SAFETY_TIMER_ERROR,
+	ACT_HIZ_MODE_ERROR,
+	ACT_LOW_VBAT_ERROR,
+	ACT_BAT_TEMP_ERROR,
+	ACT_FET_OC_ERROR,
+	ACT_OVER_TEMP_ERROR,
+	ACT_HIZMODE_ERROR,
+	ACT_READ_VBAT_ERROR,
+	ACT_LOW_VBAT,
+	ACT_MUX_ERROR,
+	ACT_CHG_IN_PROGRESS,
+} act_error_t;
+
+act_error_t act_write_regs(uint8_t addr, uint8_t *data, uint8_t len);
+act_error_t act_read_regs(uint8_t addr, uint8_t *data, uint8_t len);
 void act_set_otg_pin(uint8_t state);
 void act_set_shipmode_pin(uint8_t state);
 void act_set_vbat_sw(uint8_t state);
