@@ -89,7 +89,7 @@ ar_error_t ar_init(const ar_reg_write_t *config, uint32_t len)
     ar_delay_ms(1);
 
     // Enable the clock
-    ar_enable_clock(false);
+    ar_enable_clock(true);
 
     // Wait to settle (at least 100us)
     ar_delay_ms(1);
@@ -108,5 +108,5 @@ ar_error_t ar_init(const ar_reg_write_t *config, uint32_t len)
         return error;
     }
 
-    return AR_INIT_FAIL;
+    return AR_OK;
 }
