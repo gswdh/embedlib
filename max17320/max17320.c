@@ -193,7 +193,39 @@ bms_error_t bms_get_full_capacity(float *full_cap)
 	}
 
 	// Convert
-	*full_cap = (float)data * 5e-3;
+	*full_cap = (float)data * 500e-6;
+
+	return BMS_OK;
+}
+
+bms_error_t bms_get_general_status(bms_gen_status_t *value)
+{
+	// Read the resistor voltage data
+	uint8_t status = bms_reg_read(BMS_REG_STATUS, (uint8_t *)value, 2);
+
+	if (status != BMS_OK)
+	{
+#ifdef DEBUG
+		log_error(LOG_TAG, "Error reading status from the BMS, error code = %u.\n", status);
+#endif
+		return status;
+	}
+
+	return BMS_OK;
+}
+
+bms_error_t bms_get_protection_status(bms_fault_status_t *value)
+{
+	// Read the resistor voltage data
+	uint8_t status = bms_reg_read(BMS_REG_PROTSTATUS, (uint8_t *)value, 2);
+
+	if (status != BMS_OK)
+	{
+#ifdef DEBUG
+		log_error(LOG_TAG, "Error reading protection status from the BMS, error code = %u.\n", status);
+#endif
+		return status;
+	}
 
 	return BMS_OK;
 }
@@ -242,6 +274,28 @@ bms_error_t bms_get_stats(bms_stats_t *stats)
 	{
 #ifdef DEBUG
 		log_error(LOG_TAG, "Reading capacity not okay, error code = %u.\n", status);
+#endif
+		return status;
+	}
+
+	// Get general status
+	status = bms_get_general_status(&stats->status);
+
+	if (status != BMS_OK)
+	{
+#ifdef DEBUG
+		log_error(LOG_TAG, "Reading status not okay, error code = %u.\n", status);
+#endif
+		return status;
+	}
+
+	// Get Capacity
+	status = bms_get_protection_status(&stats->fault);
+
+	if (status != BMS_OK)
+	{
+#ifdef DEBUG
+		log_error(LOG_TAG, "Reading protection status not okay, error code = %u.\n", status);
 #endif
 		return status;
 	}

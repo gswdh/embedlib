@@ -3,8 +3,6 @@
 
 #include <stdint.h>
 
-#define DEBUG
-
 #define BMS_I2C_L_ADDR (0x6C)
 #define BMS_I2C_H_ADDR (0x16)
 
@@ -44,10 +42,42 @@
 #define BMS_BIT_RESDFAULT (0x0002)
 #define BMS_BIT_LDET (0x0001)
 
-// A results struct for the ACT ADC
-struct bms_stats_tag;
-typedef struct bms_stats_tag
+typedef struct
 {
+	uint16_t protect_alert : 1;
+	uint16_t max_soc : 1;
+	uint16_t max_temp : 1;
+	uint16_t max_voltage : 1;
+	uint16_t rsvd1 : 1;
+	uint16_t min_soc : 1;
+	uint16_t min_temp : 1;
+	uint16_t min_voltage : 1;
+	uint16_t delta_soc : 1;
+	uint16_t max_current : 1;
+	uint16_t rsvd2 : 3;
+	uint16_t min_current : 1;
+	uint16_t por : 1;
+	uint16_t rsvd3 : 1;
+} bms_gen_status_t;
+
+typedef struct
+{
+	uint16_t rsvd1 : 8;
+	uint16_t too_hot : 1;
+	uint16_t too_cold : 1;
+	uint16_t ovp : 1;
+	uint16_t occp : 1;
+	uint16_t die_hot : 1;
+	uint16_t imbalance : 1;
+	uint16_t min_voltage : 1;
+	uint16_t uvp : 1;
+	uint16_t odcp : 1;
+} bms_fault_status_t;
+
+typedef struct
+{
+	bms_gen_status_t status;
+	bms_fault_status_t fault;
 	float volts;
 	float amps;
 	float soc;
@@ -73,6 +103,8 @@ bms_error_t bms_get_voltage(float *voltage);
 bms_error_t bms_get_current(float *current);
 bms_error_t bms_get_soc(float *soc);
 bms_error_t bms_get_full_capacity(float *full_cap);
+bms_error_t bms_get_general_status(bms_gen_status_t *value);
+bms_error_t bms_get_protection_status(bms_fault_status_t *value);
 bms_error_t bms_get_stats(bms_stats_t *stats);
 
 #endif
