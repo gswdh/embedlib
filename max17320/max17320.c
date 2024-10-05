@@ -140,7 +140,7 @@ bms_error_t bms_get_current(float *current)
 	int16_t data = 0;
 
 	// Read the resistor voltage data
-	uint8_t status = bms_reg_read(BMS_REG_CBAT, (uint8_t *)&data, 2);
+	uint8_t status = bms_reg_read(BMS_REG_AVG_CBAT, (uint8_t *)&data, 2);
 
 	if (status != BMS_OK)
 	{
@@ -172,7 +172,7 @@ bms_error_t bms_get_soc(float *soc)
 	}
 
 	// Convert
-	*soc = (float)data * 5e-3;
+	*soc = (float)data * 10e-3;
 
 	return BMS_OK;
 }
