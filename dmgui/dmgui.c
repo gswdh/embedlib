@@ -361,11 +361,10 @@ void dmgui_add_text(char *text, uint8_t x, uint8_t y, uint8_t alignment)
     // Make sure the coordinates are in range
     assert(screen != NULL);
     assert(text != NULL);
-    assert(x < (127 - 5));
-    assert(y < 7);
+    assert(y < 8);
 
     // Make sure the string length isn't too long
-    assert(strlen(text) < (21 - (x * 6)));
+    assert(strlen(text) <= (21 - (x * 6)));
 
     // Shift the cursor every char
     int16_t char_offset = 0;
