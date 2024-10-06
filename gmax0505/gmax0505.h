@@ -6,6 +6,9 @@
 
 #define GMAX_STREAM_EN_BIT (0x01)
 
+#define GMAX_REG_DTEMP (192)
+#define GMAX_REG_EXP0C (3)
+
 typedef enum
 {
     PWR_0V7_EN = 0,
@@ -48,15 +51,25 @@ typedef enum
 typedef enum
 {
     GMAX_OK = 0,
+    GMAX_SYNC_FAIL,
 } gmax_error_t;
 
-void gmax_delay(const uint32_t time_ms);
+void gmax_delay_ms(const uint32_t time_ms);
 bool gmax_pin_read(const gmax_pin_t pin);
 void gmax_pin_write(const gmax_pin_t pin, const bool value);
+
+void gmax_fpga_interface_init(void);
+uint16_t gmax_get_training_word(const uint8_t *const gmax_config);
 void gmax_sync_word_write(const uint16_t sync_word);
+bool gmax_sync_complete(void);
+void gmax_sync_mode(const bool en);
+void gmax_initiate_frame(void);
 
 gmax_error_t gmax_init(void);
 gmax_error_t gmax_deinit(void);
 gmax_error_t gmax_frame_request(const uint32_t int_time_us, const gmax_gain_t gain, const gmax_resolution_t res);
+gmax_error_t gmax_sensor_temperature(float *const temp_c);
+
+char *gmax_error_string(const gmax_error_t error_code);
 
 #endif
