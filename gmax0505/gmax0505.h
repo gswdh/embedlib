@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define GMAX_STREAM_EN_BIT (0x01)
+#define GMAX_STREAM_EN_BIT (0x02)
 
 #define GMAX_REG_DTEMP (192)
 #define GMAX_REG_EXP0C (3)
