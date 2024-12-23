@@ -54,4 +54,7 @@ ar_error_t ar_set_gain(const float gain);
 ar_error_t ar_set_shutter_time_s(const float time_s);
 ar_error_t ar_set_resolution(const uint32_t x, const uint32_t y);
 
+// Debugging
+char *ar_debug_gpio_state(const uint8_t gpio_state);
+
 #endif

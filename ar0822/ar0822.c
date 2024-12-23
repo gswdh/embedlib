@@ -214,3 +214,37 @@ ar_error_t ar_set_resolution(const uint32_t x, const uint32_t y)
 {
     return AR_OK;
 }
+
+char *ar_debug_gpio_state(const uint8_t gpio_state)
+{
+    switch (gpio_state & 0x07)
+    {
+    case 0:
+        return "M3ROM upload in progress";
+        break;
+    case 1:
+        return "critical OTPM upload in progress";
+        break;
+    case 2:
+        return "non-critical OTPM upload in progress";
+        break;
+    case 3:
+        return "register scan in progress";
+        break;
+    case 4:
+        return "startup MBIST in progress";
+        break;
+    case 5:
+        return "test frame in progress";
+        break;
+    case 6:
+        return "sensor in standby";
+        break;
+    case 7:
+        return "sensor streaming";
+        break;
+    default:
+        return "";
+        break;
+    }
+}
