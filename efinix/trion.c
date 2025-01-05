@@ -2,42 +2,21 @@
 
 #include "esp_log.h"
 
-bool __attribute__((weak)) trion_get_cdone()
-{
-    return false;
-}
+bool __attribute__((weak)) trion_get_cdone() { return false; }
 
-void __attribute__((weak)) trion_set_cnrst(bool level)
-{
-    return;
-}
+void __attribute__((weak)) trion_set_cnrst(bool level) { return; }
 
-void __attribute__((weak)) trion_set_cnss(bool level)
-{
-    return;
-}
+void __attribute__((weak)) trion_set_cnss(bool level) { return; }
 
-void __attribute__((weak)) trion_set_csi(bool level)
-{
-    return;
-}
+void __attribute__((weak)) trion_set_csi(bool level) { return; }
 
-void __attribute__((weak)) trion_spi_tx(uint8_t * data, uint32_t len)
-{
-    return;
-}
+void __attribute__((weak)) trion_spi_tx(uint8_t *data, uint32_t len) { return; }
 
-void __attribute__((weak)) trion_sleep_ms(uint32_t time_ms)
-{
-    return;
-}
+void __attribute__((weak)) trion_sleep_ms(uint32_t time_ms) { return; }
 
-uint32_t __attribute__((weak)) trion_get_tick()
-{
-    return 0;
-}
+uint32_t __attribute__((weak)) trion_get_tick() { return 0; }
 
-bool trion_configure(uint8_t * bitstream, uint32_t len)
+bool trion_configure(uint8_t *bitstream, uint32_t len)
 {
     // Put the FPGA into programming mode
     trion_set_cnrst(false);
@@ -53,11 +32,11 @@ bool trion_configure(uint8_t * bitstream, uint32_t len)
 
     // Send the bitstream
     uint32_t sent = 0;
-    while(sent != len)
+    while (sent != len)
     {
         uint32_t remainder = len - sent;
 
-        if(remainder > 1024)
+        if (remainder > 1024)
             remainder = 1024;
 
         trion_spi_tx(&bitstream[sent], remainder);

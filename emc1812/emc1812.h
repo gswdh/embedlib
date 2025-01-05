@@ -1,8 +1,8 @@
 #ifndef _EMC1812_H_
 #define _EMC1812_H_
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #define EMC_I2C_ADDR (0x36)
 

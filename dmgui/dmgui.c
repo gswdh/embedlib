@@ -284,7 +284,7 @@ void dmgui_set_pixel(uint8_t x, uint8_t y, uint8_t state)
     assert(y < 64);
     assert(screen != NULL);
 
-    uint8_t row = y / 8;
+    uint8_t row   = y / 8;
     uint8_t pixel = y % 8;
 
     // Set or clear the pixels
@@ -399,12 +399,6 @@ void dmgui_fill_screen(uint8_t colour)
     screen_changed = true;
 }
 
-bool dmgui_update_needed()
-{
-    return screen_changed;
-}
+bool dmgui_update_needed() { return screen_changed; }
 
-void dmgui_update_done()
-{
-    screen_changed = false;
-}
+void dmgui_update_done() { screen_changed = false; }

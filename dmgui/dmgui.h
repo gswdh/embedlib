@@ -1,14 +1,14 @@
 #ifndef _DMGUI_H_
 #define _DMGUI_H_
 
-#include <string.h>
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
 
 // Screen size
 #define GUI_HEIGHT 64
-#define GUI_WIDTH 128
-#define GUI_SIZE (GUI_HEIGHT * GUI_WIDTH)
+#define GUI_WIDTH  128
+#define GUI_SIZE   (GUI_HEIGHT * GUI_WIDTH)
 
 #define GUI_CLR_BLANK 2
 #define GUI_CLR_WHITE 1

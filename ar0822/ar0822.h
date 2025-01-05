@@ -41,32 +41,32 @@ typedef enum
 
 #define AR_ROW_TIME_S (0.000014524)
 
-#define AR_REG_GLOBAL_GAIN_MAX (0x77)
+#define AR_REG_GLOBAL_GAIN_MAX  (0x77)
 #define AR_REG_GLOBAL_GAIN_STEP (0.375)
 
 #define AR_REG_FRAME_STATUS (0x2008)
-#define AR_REG_GPIO_SELECT (0x340E)
+#define AR_REG_GPIO_SELECT  (0x340E)
 
 #define AR_REG_FRAME_STATUS_STREAM_BIT (0x0008)
 
 #define AR_REG_GLOBAL_GAIN (0x5900)
-#define AR_REG_COARSE_INT (0x3012)
+#define AR_REG_COARSE_INT  (0x3012)
 #define AR_REG_HDR_CONTROL (0x3110)
 
 #define AR_REG_GAIN_G1 (0x3056)
-#define AR_REG_GAIN_B (0x3058)
-#define AR_REG_GAIN_R (0x305A)
+#define AR_REG_GAIN_B  (0x3058)
+#define AR_REG_GAIN_R  (0x305A)
 #define AR_REG_GAIN_G2 (0x305C)
 
 // Interface functions
-void ar_set_nrst(const bool en);
-void ar_set_xshutdown(const bool en);
-void ar_enable_clock(const bool en);
-uint8_t ar_get_gpio(void);
+void       ar_set_nrst(const bool en);
+void       ar_set_xshutdown(const bool en);
+void       ar_enable_clock(const bool en);
+uint8_t    ar_get_gpio(void);
 ar_error_t ar_i2c_write(const uint16_t reg, const uint8_t *data, const uint32_t len);
 ar_error_t ar_i2c_read(const uint16_t reg, const uint8_t *data, const uint32_t len);
-void ar_delay_ms(const uint32_t time_ms);
-uint32_t ar_tick_ms(void);
+void       ar_delay_ms(const uint32_t time_ms);
+uint32_t   ar_tick_ms(void);
 
 // Driver functions
 ar_error_t ar_init(const ar_reg_write_t *config, uint32_t len);

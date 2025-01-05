@@ -1,9 +1,6 @@
 #include "lis3dsh.h"
 
-void __attribute__((weak)) lis_spi_transfer(uint8_t *tx, uint8_t *rx, uint8_t len)
-{
-    return;
-}
+void __attribute__((weak)) lis_spi_transfer(uint8_t *tx, uint8_t *rx, uint8_t len) { return; }
 
 void lis_write(uint8_t addr, uint8_t *data, uint8_t len)
 {

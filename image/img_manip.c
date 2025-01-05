@@ -1,6 +1,7 @@
 #include "img_manip.h"
 
-void img_rectangle(image_t *img, uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, IMG_PIXEL_TYPE colour)
+void img_rectangle(
+    image_t *img, uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, IMG_PIXEL_TYPE colour)
 {
     // Check for out of range
     if (x1 > img->w)
@@ -21,7 +22,7 @@ void img_rectangle(image_t *img, uint32_t x1, uint32_t y1, uint32_t x2, uint32_t
     {
         for (uint32_t y = y1; y < y2; y++)
         {
-            uint32_t loc = (y * img->w) + x;
+            uint32_t loc   = (y * img->w) + x;
             img->data[loc] = (IMG_PIXEL_TYPE)colour;
         }
     }
@@ -128,10 +129,10 @@ void img_integer_scale(image_t *dst, image_t *src, uint32_t factor)
     }
 
     // Setup the new image
-    dst->w = src->w / factor;
-    dst->h = src->h / factor;
+    dst->w          = src->w / factor;
+    dst->h          = src->h / factor;
     dst->pixel_size = src->pixel_size;
-    dst->data = calloc(dst->w * dst->h, dst->pixel_size);
+    dst->data       = calloc(dst->w * dst->h, dst->pixel_size);
 
     // Do the maths
     for (uint32_t x = 0; x < dst->w; x++)
@@ -165,16 +166,15 @@ void img_integer_scale(image_t *dst, image_t *src, uint32_t factor)
 
 void img_darken(image_t *src, double factor)
 {
-    if(factor > 1) factor = 1;
-    if(factor < 0) factor = 0;
+    if (factor > 1)
+        factor = 1;
+    if (factor < 0)
+        factor = 0;
 
-    for(uint32_t i = 0; i < (src->w * src->h); i++)
+    for (uint32_t i = 0; i < (src->w * src->h); i++)
     {
         src->data[i] = (uint8_t)((float)src->data[i] * factor);
     }
 }
 
-void __attribute__((weak)) img_pat_watchdog()
-{
-    return;
-}
+void __attribute__((weak)) img_pat_watchdog() { return; }

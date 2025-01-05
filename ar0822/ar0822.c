@@ -24,13 +24,15 @@ uint8_t __attribute__((weak)) ar_get_gpio(void)
     return 0U;
 }
 
-ar_error_t __attribute__((weak)) ar_i2c_write(const uint16_t reg, const uint8_t *data, const uint32_t len)
+ar_error_t __attribute__((weak))
+ar_i2c_write(const uint16_t reg, const uint8_t *data, const uint32_t len)
 {
     assert(false && "AR driver interface has not been implemented.");
     return AR_ERROR_I2C_FAIL;
 }
 
-ar_error_t __attribute__((weak)) ar_i2c_read(const uint16_t reg, const uint8_t *data, const uint32_t len)
+ar_error_t __attribute__((weak))
+ar_i2c_read(const uint16_t reg, const uint8_t *data, const uint32_t len)
 {
     assert(false && "AR driver interface has not been implemented.");
     return AR_ERROR_I2C_FAIL;
@@ -47,10 +49,7 @@ uint32_t __attribute__((weak)) ar_tick_ms(void)
     return 0U;
 }
 
-static uint16_t reverse_endian(uint16_t value)
-{
-    return (value << 8) | (value >> 8);
-}
+static uint16_t reverse_endian(uint16_t value) { return (value << 8) | (value >> 8); }
 
 static ar_error_t ar_read_reg(const uint16_t reg, uint16_t *const value)
 {
@@ -84,8 +83,8 @@ static ar_error_t ar_write_reg(const uint16_t reg, uint16_t value)
 static ar_error_t ar_i2c_modify_reg(const uint16_t addr, const uint16_t data, const uint16_t mask)
 {
     // Get the value in the current state
-    uint16_t current = 0;
-    ar_error_t error = ar_read_reg(addr, &current);
+    uint16_t   current = 0;
+    ar_error_t error   = ar_read_reg(addr, &current);
     if (error != AR_OK)
     {
         return error;
@@ -120,7 +119,7 @@ static ar_error_t ar_reg_init(const ar_reg_write_t *config, uint32_t len)
     }
 
     // Wait for the status to be in the stream mode
-    uint16_t status = 0;
+    uint16_t status  = 0;
     uint32_t t_start = ar_tick_ms();
     while ((status & AR_REG_FRAME_STATUS_STREAM_BIT) != AR_REG_FRAME_STATUS_STREAM_BIT)
     {
@@ -221,10 +220,7 @@ ar_error_t ar_gpio_config(uint16_t *const config)
     return AR_OK;
 }
 
-ar_error_t ar_trigger_frame(void)
-{
-    return AR_OK;
-}
+ar_error_t ar_trigger_frame(void) { return AR_OK; }
 
 ar_error_t ar_get_gain(float *gain_db)
 {
@@ -317,10 +313,7 @@ ar_error_t ar_set_shutter_time_s(const float time_s)
     return AR_OK;
 }
 
-ar_error_t ar_set_resolution(const uint32_t x, const uint32_t y)
-{
-    return AR_OK;
-}
+ar_error_t ar_set_resolution(const uint32_t x, const uint32_t y) { return AR_OK; }
 
 char *ar_debug_gpio_state(const uint8_t gpio_state)
 {

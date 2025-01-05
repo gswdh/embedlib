@@ -21,13 +21,13 @@
 struct CHRG_ADCResultsTag;
 typedef struct CHRG_ADCResultsTag
 {
-	float i_in_amps;
-	float v_in_volts;
-	float v_bat_volts;
-	float i_bat_amps;
-	float t_th_celcius;
-	float t_die_celcius;
-	float v_adc_volts;
+    float i_in_amps;
+    float v_in_volts;
+    float v_bat_volts;
+    float i_bat_amps;
+    float t_th_celcius;
+    float t_die_celcius;
+    float v_adc_volts;
 } CHRG_ADCResults;
 
 act_error_t CHRG_PollForOTGMode(uint32_t timeout);
