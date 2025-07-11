@@ -43,7 +43,7 @@
 
 typedef enum
 {
-    TMC_ERROR_OK = 0,
+    TMC_OK = 0,
     TMC_ERROR_INIT,
     TMC_ERROR_UART,
     TMC_ERROR_INVALID_PARAM,

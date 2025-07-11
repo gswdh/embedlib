@@ -28,7 +28,7 @@ static const tmc_config_t example_config = {.node_address       = 0x00,
 
 /**
  * @brief Example function to initialize TMC2209
- * @return tmc_error_t: TMC_ERROR_OK on success
+ * @return tmc_error_t: TMC_OK on success
  */
 tmc_error_t tmc2209_example_init(void)
 {
@@ -36,7 +36,7 @@ tmc_error_t tmc2209_example_init(void)
 
     // Initialize driver with 16 microsteps and 200 steps per revolution
     tmc_error_t error = tmc_init(TMC_MICROSTEP_16, 200);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("TMC2209 init failed with error: %d\n", error);
         return error;
@@ -44,19 +44,19 @@ tmc_error_t tmc2209_example_init(void)
 
     // Configure motor settings
     error = tmc_configure(&example_config);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("TMC2209 configuration failed with error: %d\n", error);
         return error;
     }
 
     printf("TMC2209 initialized successfully!\n");
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }
 
 /**
  * @brief Example function to test motor control
- * @return tmc_error_t: TMC_ERROR_OK on success
+ * @return tmc_error_t: TMC_OK on success
  */
 tmc_error_t tmc2209_example_motor_test(void)
 {
@@ -65,7 +65,7 @@ tmc_error_t tmc2209_example_motor_test(void)
     // Test 1: Start motor at 60 RPM
     printf("Test 1: Starting motor at 60 RPM\n");
     tmc_error_t error = tmc_start(60.0f);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Failed to start motor: %d\n", error);
         return error;
@@ -77,7 +77,7 @@ tmc_error_t tmc2209_example_motor_test(void)
     // Test 2: Change speed to 120 RPM
     printf("Test 2: Changing speed to 120 RPM\n");
     error = tmc_set_speed(120.0f);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Failed to change speed: %d\n", error);
         return error;
@@ -89,19 +89,19 @@ tmc_error_t tmc2209_example_motor_test(void)
     // Test 3: Stop motor
     printf("Test 3: Stopping motor\n");
     error = tmc_stop();
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Failed to stop motor: %d\n", error);
         return error;
     }
 
     printf("Motor test completed successfully!\n");
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }
 
 /**
  * @brief Example function to test status monitoring
- * @return tmc_error_t: TMC_ERROR_OK on success
+ * @return tmc_error_t: TMC_OK on success
  */
 tmc_error_t tmc2209_example_status_test(void)
 {
@@ -113,7 +113,7 @@ tmc_error_t tmc2209_example_status_test(void)
 
     // Test 1: Get driver status
     tmc_error_t error = tmc_get_status(&status);
-    if (error == TMC_ERROR_OK)
+    if (error == TMC_OK)
     {
         printf("Driver status: 0x%08lX\n", status);
     }
@@ -124,7 +124,7 @@ tmc_error_t tmc2209_example_status_test(void)
 
     // Test 2: Get motor current
     error = tmc_get_current(&current);
-    if (error == TMC_ERROR_OK)
+    if (error == TMC_OK)
     {
         printf("Motor current: %d mA\n", current);
     }
@@ -135,7 +135,7 @@ tmc_error_t tmc2209_example_status_test(void)
 
     // Test 3: Get driver temperature
     error = tmc_get_temperature(&temperature);
-    if (error == TMC_ERROR_OK)
+    if (error == TMC_OK)
     {
         printf("Driver temperature: %d°C\n", temperature);
     }
@@ -146,7 +146,7 @@ tmc_error_t tmc2209_example_status_test(void)
 
     // Test 4: Check stall status
     error = tmc_get_stall_status(&stalled);
-    if (error == TMC_ERROR_OK)
+    if (error == TMC_OK)
     {
         printf("Stall status: %s\n", stalled ? "STALLED" : "OK");
     }
@@ -156,12 +156,12 @@ tmc_error_t tmc2209_example_status_test(void)
     }
 
     printf("Status monitoring test completed!\n");
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }
 
 /**
  * @brief Example function to test current configuration
- * @return tmc_error_t: TMC_ERROR_OK on success
+ * @return tmc_error_t: TMC_OK on success
  */
 tmc_error_t tmc2209_example_current_test(void)
 {
@@ -173,7 +173,7 @@ tmc_error_t tmc2209_example_current_test(void)
     // Set low current (200mA hold, 400mA run)
     printf("Setting low current (200mA hold, 400mA run)\n");
     error = tmc_set_current(200, 400, 5);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Failed to set low current: %d\n", error);
         return error;
@@ -185,7 +185,7 @@ tmc_error_t tmc2209_example_current_test(void)
     // Set medium current (500mA hold, 800mA run)
     printf("Setting medium current (500mA hold, 800mA run)\n");
     error = tmc_set_current(500, 800, 10);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Failed to set medium current: %d\n", error);
         return error;
@@ -197,19 +197,19 @@ tmc_error_t tmc2209_example_current_test(void)
     // Set high current (800mA hold, 1200mA run)
     printf("Setting high current (800mA hold, 1200mA run)\n");
     error = tmc_set_current(800, 1200, 15);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Failed to set high current: %d\n", error);
         return error;
     }
 
     printf("Current configuration test completed!\n");
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }
 
 /**
  * @brief Example function to test microstepping configuration
- * @return tmc_error_t: TMC_ERROR_OK on success
+ * @return tmc_error_t: TMC_OK on success
  */
 tmc_error_t tmc2209_example_microstepping_test(void)
 {
@@ -233,7 +233,7 @@ tmc_error_t tmc2209_example_microstepping_test(void)
     {
         printf("Setting microstepping to 1/%s\n", microstep_names[i]);
         error = tmc_set_microstepping(microsteps[i]);
-        if (error != TMC_ERROR_OK)
+        if (error != TMC_OK)
         {
             printf("Failed to set microstepping 1/%s: %d\n", microstep_names[i], error);
             return error;
@@ -246,19 +246,19 @@ tmc_error_t tmc2209_example_microstepping_test(void)
     // Reset to 16 microsteps
     printf("Resetting to 16 microsteps\n");
     error = tmc_set_microstepping(TMC_MICROSTEP_16);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Failed to reset microstepping: %d\n", error);
         return error;
     }
 
     printf("Microstepping configuration test completed!\n");
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }
 
 /**
  * @brief Example function to test mode switching
- * @return tmc_error_t: TMC_ERROR_OK on success
+ * @return tmc_error_t: TMC_OK on success
  */
 tmc_error_t tmc2209_example_mode_test(void)
 {
@@ -269,7 +269,7 @@ tmc_error_t tmc2209_example_mode_test(void)
     // Test StealthChop mode
     printf("Switching to StealthChop mode\n");
     error = tmc_set_mode(TMC_STEALTHCHOP);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Failed to set StealthChop mode: %d\n", error);
         return error;
@@ -281,7 +281,7 @@ tmc_error_t tmc2209_example_mode_test(void)
     // Test SpreadCycle mode
     printf("Switching to SpreadCycle mode\n");
     error = tmc_set_mode(TMC_SPREADCYCLE);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Failed to set SpreadCycle mode: %d\n", error);
         return error;
@@ -293,19 +293,19 @@ tmc_error_t tmc2209_example_mode_test(void)
     // Switch back to StealthChop
     printf("Switching back to StealthChop mode\n");
     error = tmc_set_mode(TMC_STEALTHCHOP);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Failed to set StealthChop mode: %d\n", error);
         return error;
     }
 
     printf("Mode switching test completed!\n");
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }
 
 /**
  * @brief Complete example function that runs all tests
- * @return tmc_error_t: TMC_ERROR_OK on success
+ * @return tmc_error_t: TMC_OK on success
  */
 tmc_error_t tmc2209_example_run_all_tests(void)
 {
@@ -313,7 +313,7 @@ tmc_error_t tmc2209_example_run_all_tests(void)
 
     // Initialize
     tmc_error_t error = tmc2209_example_init();
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Initialization failed!\n");
         return error;
@@ -322,7 +322,7 @@ tmc_error_t tmc2209_example_run_all_tests(void)
     // Run all tests
     printf("\n--- Running Status Test ---\n");
     error = tmc2209_example_status_test();
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Status test failed!\n");
         return error;
@@ -330,7 +330,7 @@ tmc_error_t tmc2209_example_run_all_tests(void)
 
     printf("\n--- Running Current Test ---\n");
     error = tmc2209_example_current_test();
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Current test failed!\n");
         return error;
@@ -338,7 +338,7 @@ tmc_error_t tmc2209_example_run_all_tests(void)
 
     printf("\n--- Running Microstepping Test ---\n");
     error = tmc2209_example_microstepping_test();
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Microstepping test failed!\n");
         return error;
@@ -346,7 +346,7 @@ tmc_error_t tmc2209_example_run_all_tests(void)
 
     printf("\n--- Running Mode Test ---\n");
     error = tmc2209_example_mode_test();
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Mode test failed!\n");
         return error;
@@ -354,19 +354,19 @@ tmc_error_t tmc2209_example_run_all_tests(void)
 
     printf("\n--- Running Motor Control Test ---\n");
     error = tmc2209_example_motor_test();
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         printf("Motor control test failed!\n");
         return error;
     }
 
     printf("\n=== All Tests Completed Successfully! ===\n");
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }
 
 /**
  * @brief Example function to demonstrate register-level access
- * @return tmc_error_t: TMC_ERROR_OK on success
+ * @return tmc_error_t: TMC_OK on success
  */
 tmc_error_t tmc2209_example_register_test(void)
 {
@@ -377,7 +377,7 @@ tmc_error_t tmc2209_example_register_test(void)
 
     // Read GSTAT register
     error = tmc_read_reg(0x00, TMC_REG_GSTAT, &value);
-    if (error == TMC_ERROR_OK)
+    if (error == TMC_OK)
     {
         printf("GSTAT register: 0x%08lX\n", value);
     }
@@ -388,7 +388,7 @@ tmc_error_t tmc2209_example_register_test(void)
 
     // Read DRV_STATUS register
     error = tmc_read_reg(0x00, TMC_REG_DRV_STATUS, &value);
-    if (error == TMC_ERROR_OK)
+    if (error == TMC_OK)
     {
         printf("DRV_STATUS register: 0x%08lX\n", value);
 
@@ -409,5 +409,5 @@ tmc_error_t tmc2209_example_register_test(void)
     }
 
     printf("Register-level access test completed!\n");
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }

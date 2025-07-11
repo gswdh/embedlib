@@ -1,6 +1,7 @@
 #include "tmc2209.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 // Global configuration
@@ -39,7 +40,7 @@ static tmc_error_t tmc_write_datagram(const tmc_write_datagram_t *tx)
 static tmc_error_t tmc_read_datagram(const tmc_read_datagram_t *tx, tmc_write_datagram_t *rx)
 {
     tmc_error_t error = tmc_uart_tx((const uint8_t *)tx, (uint32_t)sizeof(tmc_read_datagram_t));
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
@@ -88,7 +89,7 @@ tmc_error_t tmc_read_reg(const uint8_t node, const uint8_t addr, uint32_t *value
     // Send on the UART
     tmc_write_datagram_t rx    = {0};
     tmc_error_t          error = tmc_read_datagram((const tmc_read_datagram_t *)&tx, &rx);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
@@ -109,7 +110,7 @@ tmc_error_t tmc_read_reg(const uint8_t node, const uint8_t addr, uint32_t *value
     // Let's get the data...
     *value = __builtin_bswap32(rx.payload);
 
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }
 
 tmc_error_t tmc_init(const tmc_microstepping_t stepping, const uint32_t steps_per_rev)
@@ -133,7 +134,7 @@ tmc_error_t tmc_init(const tmc_microstepping_t stepping, const uint32_t steps_pe
     // Read GSTAT to check communication
     uint32_t    gstat = 0;
     tmc_error_t error = tmc_read_reg(tmc_config.node_address, TMC_REG_GSTAT, &gstat);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return TMC_ERROR_INIT;
     }
@@ -165,7 +166,7 @@ tmc_error_t tmc_configure(const tmc_config_t *config)
     chopconf |= (1 << 31);                              // CHM = 1 (spreadCycle)
 
     tmc_error_t error = tmc_write_reg(tmc_config.node_address, TMC_REG_CHOPCONF, chopconf);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
@@ -177,14 +178,14 @@ tmc_error_t tmc_configure(const tmc_config_t *config)
     ihold_irun |= (tmc_config.current_hold_delay & 0x0F) << 16; // IHOLDDELAY[3:0]
 
     error = tmc_write_reg(tmc_config.node_address, TMC_REG_IHOLD_IRUN, ihold_irun);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
 
     // Configure TPOWERDOWN register
     error = tmc_write_reg(tmc_config.node_address, TMC_REG_TPOWERDOWN, 0x00000000);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
@@ -192,7 +193,7 @@ tmc_error_t tmc_configure(const tmc_config_t *config)
     // Configure TPWMTHRS register (StealthChop threshold)
     uint32_t tpwmthrs = (uint32_t)tmc_config.stealthchop_threshold << 0;
     error             = tmc_write_reg(tmc_config.node_address, TMC_REG_TPWMTHRS, tpwmthrs);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
@@ -200,7 +201,7 @@ tmc_error_t tmc_configure(const tmc_config_t *config)
     // Configure TCOOLTHRS register (CoolStep threshold)
     uint32_t tcoolthrs = (uint32_t)tmc_config.coolstep_threshold << 0;
     error              = tmc_write_reg(tmc_config.node_address, TMC_REG_TCOOLTHRS, tcoolthrs);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
@@ -208,7 +209,7 @@ tmc_error_t tmc_configure(const tmc_config_t *config)
     // Configure THIGH register (stall detection threshold)
     uint32_t thigh = (uint32_t)tmc_config.stall_threshold << 0;
     error          = tmc_write_reg(tmc_config.node_address, TMC_REG_THIGH, thigh);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
@@ -223,12 +224,12 @@ tmc_error_t tmc_configure(const tmc_config_t *config)
     pwmconf |= (1 << 20); // FREEWHEEL[1:0] = 1
 
     error = tmc_write_reg(tmc_config.node_address, TMC_REG_PWMCONF, pwmconf);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
 
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }
 
 tmc_error_t tmc_set_current(uint16_t hold_current, uint16_t run_current, uint16_t hold_delay)
@@ -252,7 +253,7 @@ tmc_error_t tmc_set_mode(tmc_mode_t mode)
     // Configure CHOPCONF register for mode
     uint32_t    chopconf = 0;
     tmc_error_t error    = tmc_read_reg(tmc_config.node_address, TMC_REG_CHOPCONF, &chopconf);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
@@ -275,7 +276,7 @@ tmc_error_t tmc_set_microstepping(const tmc_microstepping_t stepping)
 
     uint32_t    chopconf = 0;
     tmc_error_t error    = tmc_read_reg(tmc_config.node_address, TMC_REG_CHOPCONF, &chopconf);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
@@ -300,7 +301,7 @@ tmc_error_t tmc_set_thresholds(uint8_t stealthchop_threshold,
     // Set StealthChop threshold
     uint32_t tpwmthrs = (uint32_t)stealthchop_threshold << 0;
     error             = tmc_write_reg(tmc_config.node_address, TMC_REG_TPWMTHRS, tpwmthrs);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
@@ -308,7 +309,7 @@ tmc_error_t tmc_set_thresholds(uint8_t stealthchop_threshold,
     // Set CoolStep threshold
     uint32_t tcoolthrs = (uint32_t)coolstep_threshold << 0;
     error              = tmc_write_reg(tmc_config.node_address, TMC_REG_TCOOLTHRS, tcoolthrs);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
@@ -340,7 +341,7 @@ tmc_error_t tmc_set_direction(bool direction)
     tmc_config.direction = direction;
     // Direction is typically controlled by external GPIO or step/dir interface
     // This function is provided for completeness but may need external implementation
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }
 
 tmc_error_t tmc_set_speed(float speed_rpm)
@@ -368,14 +369,14 @@ tmc_error_t tmc_set_frequency(uint32_t frequency_hz)
 
     // The actual step frequency is typically controlled by external timer/PWM
     // This function sets up the configuration for external control
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }
 
 tmc_error_t tmc_start(const float speed_rpm)
 {
     // Enable the driver
     tmc_error_t error = tmc_enable(true);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
@@ -431,14 +432,14 @@ tmc_error_t tmc_get_current(uint16_t *current)
 
     uint32_t    drv_status = 0;
     tmc_error_t error      = tmc_read_reg(tmc_config.node_address, TMC_REG_DRV_STATUS, &drv_status);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
 
     // Extract current from DRV_STATUS register
     *current = (uint16_t)((drv_status >> 0) & 0x1F);
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }
 
 tmc_error_t tmc_get_temperature(uint16_t *temperature)
@@ -450,14 +451,14 @@ tmc_error_t tmc_get_temperature(uint16_t *temperature)
 
     uint32_t    drv_status = 0;
     tmc_error_t error      = tmc_read_reg(tmc_config.node_address, TMC_REG_DRV_STATUS, &drv_status);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
 
     // Extract temperature from DRV_STATUS register
     *temperature = (uint16_t)((drv_status >> 16) & 0xFF);
-    return TMC_ERROR_OK;
+    return TMC_OK;
 }
 
 tmc_error_t tmc_get_stall_status(bool *stalled)
@@ -469,12 +470,135 @@ tmc_error_t tmc_get_stall_status(bool *stalled)
 
     uint32_t    drv_status = 0;
     tmc_error_t error      = tmc_read_reg(tmc_config.node_address, TMC_REG_DRV_STATUS, &drv_status);
-    if (error != TMC_ERROR_OK)
+    if (error != TMC_OK)
     {
         return error;
     }
 
     // Check stall detection bit
     *stalled = (bool)((drv_status >> 24) & 0x01);
-    return TMC_ERROR_OK;
+    return TMC_OK;
+}
+
+char *tmc_get_status_string(uint32_t status)
+{
+    static char status_str[512];
+    int         offset = 0;
+
+    // Clear the buffer
+    memset(status_str, 0, sizeof(status_str));
+
+    // Extract status bits from DRV_STATUS register
+    uint16_t sg_result  = (status >> 0) & 0x3FF; // SG_RESULT[9:0] - StallGuard2 result
+    uint8_t  fsactive   = (status >> 15) & 0x01; // FSACTIVE - Full step active (bit 15)
+    uint8_t  cs_actual  = (status >> 16) & 0x1F; // CS_ACTUAL[4:0] - Actual motor current
+    uint8_t  stallguard = (status >> 24) & 0x01; // STALLGUARD - Stall detected
+    uint8_t  ot         = (status >> 25) & 0x01; // OT - Overtemperature prewarning
+    uint8_t  otpw       = (status >> 26) & 0x01; // OTPW - Overtemperature warning
+    uint8_t  s2ga       = (status >> 27) & 0x01; // S2GA - Short to ground phase A
+    uint8_t  s2gb       = (status >> 28) & 0x01; // S2GB - Short to ground phase B
+    uint8_t  ola        = (status >> 29) & 0x01; // OLA - Open load phase A
+    uint8_t  olb        = (status >> 30) & 0x01; // OLB - Open load phase B
+    uint8_t  stst       = (status >> 31) & 0x01; // STST - Standstill detected
+
+    // Build status string
+    offset += snprintf(status_str + offset,
+                       sizeof(status_str) - offset,
+                       "DRV_STATUS: 0x%08lX\n",
+                       (unsigned long)status);
+
+    // StallGuard2 result
+    offset += snprintf(status_str + offset,
+                       sizeof(status_str) - offset,
+                       "  SG_RESULT: %u (StallGuard2 result)\n",
+                       sg_result);
+
+    // Full step active
+    offset += snprintf(status_str + offset,
+                       sizeof(status_str) - offset,
+                       "  FSACTIVE: %s\n",
+                       fsactive ? "YES" : "NO");
+
+    // Actual motor current
+    offset += snprintf(status_str + offset,
+                       sizeof(status_str) - offset,
+                       "  CS_ACTUAL: %u (Current scale)\n",
+                       cs_actual);
+
+    // Stall detection
+    offset += snprintf(status_str + offset,
+                       sizeof(status_str) - offset,
+                       "  STALLGUARD: %s\n",
+                       stallguard ? "STALL DETECTED" : "OK");
+
+    // Temperature warnings
+    offset += snprintf(status_str + offset,
+                       sizeof(status_str) - offset,
+                       "  OT: %s\n",
+                       ot ? "OVERTEMP PREWARNING" : "OK");
+    offset += snprintf(status_str + offset,
+                       sizeof(status_str) - offset,
+                       "  OTPW: %s\n",
+                       otpw ? "OVERTEMP WARNING" : "OK");
+
+    // Short circuit detection
+    offset += snprintf(status_str + offset,
+                       sizeof(status_str) - offset,
+                       "  S2GA: %s\n",
+                       s2ga ? "SHORT TO GND PHASE A" : "OK");
+    offset += snprintf(status_str + offset,
+                       sizeof(status_str) - offset,
+                       "  S2GB: %s\n",
+                       s2gb ? "SHORT TO GND PHASE B" : "OK");
+
+    // Open load detection
+    offset += snprintf(status_str + offset,
+                       sizeof(status_str) - offset,
+                       "  OLA: %s\n",
+                       ola ? "OPEN LOAD PHASE A" : "OK");
+    offset += snprintf(status_str + offset,
+                       sizeof(status_str) - offset,
+                       "  OLB: %s\n",
+                       olb ? "OPEN LOAD PHASE B" : "OK");
+
+    // Standstill detection
+    offset += snprintf(status_str + offset,
+                       sizeof(status_str) - offset,
+                       "  STST: %s\n",
+                       stst ? "STANDSTILL" : "MOVING");
+
+    // Summary of critical issues
+    if (stallguard || ot || otpw || s2ga || s2gb || ola || olb)
+    {
+        offset +=
+            snprintf(status_str + offset, sizeof(status_str) - offset, "\nCRITICAL ISSUES:\n");
+        if (stallguard)
+            offset +=
+                snprintf(status_str + offset, sizeof(status_str) - offset, "  - STALL DETECTED\n");
+        if (ot)
+            offset += snprintf(
+                status_str + offset, sizeof(status_str) - offset, "  - OVERTEMP PREWARNING\n");
+        if (otpw)
+            offset += snprintf(
+                status_str + offset, sizeof(status_str) - offset, "  - OVERTEMP WARNING\n");
+        if (s2ga)
+            offset += snprintf(
+                status_str + offset, sizeof(status_str) - offset, "  - SHORT TO GND PHASE A\n");
+        if (s2gb)
+            offset += snprintf(
+                status_str + offset, sizeof(status_str) - offset, "  - SHORT TO GND PHASE B\n");
+        if (ola)
+            offset += snprintf(
+                status_str + offset, sizeof(status_str) - offset, "  - OPEN LOAD PHASE A\n");
+        if (olb)
+            offset += snprintf(
+                status_str + offset, sizeof(status_str) - offset, "  - OPEN LOAD PHASE B\n");
+    }
+    else
+    {
+        offset += snprintf(
+            status_str + offset, sizeof(status_str) - offset, "\nSTATUS: All systems OK\n");
+    }
+
+    return status_str;
 }

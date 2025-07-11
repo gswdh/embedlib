@@ -43,7 +43,7 @@
 
 typedef enum
 {
-    TMC_ERROR_OK = 0,
+    TMC_OK = 0,
     TMC_ERROR_INIT,
     TMC_ERROR_UART,
     TMC_ERROR_INVALID_PARAM,
@@ -143,6 +143,7 @@ tmc_error_t tmc_get_speed(uint32_t *speed);
 tmc_error_t tmc_get_current(uint16_t *current);
 tmc_error_t tmc_get_temperature(uint16_t *temperature);
 tmc_error_t tmc_get_stall_status(bool *stalled);
+char       *tmc_get_status_string(uint32_t status);
 
 // Register read/write functions
 tmc_error_t tmc_write_reg(const uint8_t node, const uint8_t addr, const uint32_t value);
