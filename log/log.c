@@ -18,10 +18,6 @@ static const char *log_level_colors[] = {
 
 static const char *log_reset_color = "\x1b[0m";
 
-void __attribute__((weak)) log_transmit(const char *log) { return; }
-
-uint32_t __attribute__((weak)) log_get_time() { return 0; }
-
 void log_set_level(int level)
 {
     if (level >= LOG_LEVEL_TRACE && level <= LOG_LEVEL_FATAL)
@@ -40,7 +36,7 @@ void log_message(int level, const char *tag, const char *fmt, ...)
     va_list args;
     va_start(args, fmt);
 
-    uint32_t uptime = log_get_time();
+    const uint32_t uptime = log_get_time();
 
     char log_buffer[128];
     int  offset = 0;
@@ -55,7 +51,7 @@ void log_message(int level, const char *tag, const char *fmt, ...)
     offset += vsnprintf(log_buffer + offset, sizeof(log_buffer) - offset, fmt, args);
 
     // Append reset color and newline to the buffer
-    snprintf(log_buffer + offset, sizeof(log_buffer) - offset, "%s", log_reset_color);
+    snprintf(log_buffer + offset, sizeof(log_buffer) - offset, "%s\n", log_reset_color);
 
     // Output the log message
     log_transmit((const char *)log_buffer);
