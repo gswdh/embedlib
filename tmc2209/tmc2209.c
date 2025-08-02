@@ -113,8 +113,23 @@ tmc_error_t tmc_read_reg(const uint8_t node, const uint8_t addr, uint32_t *value
     return TMC_OK;
 }
 
-tmc_error_t tmc_init(const tmc_microstepping_t stepping, const uint32_t steps_per_rev)
+tmc_error_t
+tmc_init(const tmc_microstepping_t stepping, const uint32_t steps_per_rev, const uint8_t address)
 {
+    // Initialize hardware interface
+    tmc_error_t error = tmc_hw_init();
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    // Set default address (0)
+    error = tmc_set_address(address);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
     // Initialize configuration
     memset(&tmc_config, 0, sizeof(tmc_config));
     tmc_config.node_address          = 0x00;
@@ -132,8 +147,8 @@ tmc_error_t tmc_init(const tmc_microstepping_t stepping, const uint32_t steps_pe
     tmc_config.step_frequency        = 0;
 
     // Read GSTAT to check communication
-    uint32_t    gstat = 0;
-    tmc_error_t error = tmc_read_reg(tmc_config.node_address, TMC_REG_GSTAT, &gstat);
+    uint32_t gstat = 0;
+    error          = tmc_read_reg(tmc_config.node_address, TMC_REG_GSTAT, &gstat);
     if (error != TMC_OK)
     {
         return TMC_ERROR_INIT;
@@ -141,6 +156,24 @@ tmc_error_t tmc_init(const tmc_microstepping_t stepping, const uint32_t steps_pe
 
     // Configure the driver
     return tmc_configure(&tmc_config);
+}
+
+tmc_error_t tmc_set_address(uint8_t address)
+{
+    /* Validate address range (0-3) */
+    if (address > 3)
+    {
+        return TMC_ERROR_INVALID_PARAM;
+    }
+
+    /* Set MS1 and MS2 pins based on binary address value */
+    bool ms1 = (address & 0x01) != 0; /* LSB */
+    bool ms2 = (address & 0x02) != 0; /* MSB */
+
+    tmc_gpio_ms1_write(ms1);
+    tmc_gpio_ms2_write(ms2);
+
+    return TMC_OK;
 }
 
 tmc_error_t tmc_configure(const tmc_config_t *config)
@@ -323,30 +356,25 @@ tmc_error_t tmc_enable(bool enable)
 {
     tmc_config.enabled = enable;
 
-    if (enable)
-    {
-        // Enable by setting IHOLD to non-zero
-        return tmc_set_current(
-            tmc_config.current_hold, tmc_config.current_run, tmc_config.current_hold_delay);
-    }
-    else
-    {
-        // Disable by setting IHOLD to zero
-        return tmc_set_current(0, tmc_config.current_run, tmc_config.current_hold_delay);
-    }
+    // Use hardware interface to control enable pin
+    tmc_gpio_nen_write(!enable); // Invert because NEN is active low
+
+    return TMC_OK;
 }
 
 tmc_error_t tmc_set_direction(bool direction)
 {
     tmc_config.direction = direction;
-    // Direction is typically controlled by external GPIO or step/dir interface
-    // This function is provided for completeness but may need external implementation
+
+    // Use hardware interface to control direction pin
+    tmc_gpio_dir_write(direction);
+
     return TMC_OK;
 }
 
 tmc_error_t tmc_set_speed(float speed_rpm)
 {
-    if (speed_rpm == 0.0f)
+    if ((speed_rpm < 0.01f) && (speed_rpm > -0.01f))
     {
         return tmc_stop();
     }
@@ -367,8 +395,12 @@ tmc_error_t tmc_set_frequency(uint32_t frequency_hz)
     // Set direction
     tmc_set_direction(tmc_config.direction);
 
-    // The actual step frequency is typically controlled by external timer/PWM
-    // This function sets up the configuration for external control
+    // Use hardware interface to control step frequency
+    if (frequency_hz > 0)
+    {
+        tmc_tim_step_freq((float)frequency_hz);
+    }
+
     return TMC_OK;
 }
 

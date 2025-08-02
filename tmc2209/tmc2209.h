@@ -118,8 +118,22 @@ _Static_assert(sizeof(tmc_addr_t) == 1, "sizeof(tmc_addr_t) != 1");
 tmc_error_t tmc_uart_tx(const uint8_t *data, const uint32_t len);
 tmc_error_t tmc_uart_rx(uint8_t *data, const uint32_t len, const uint32_t timeout_ms);
 
+// Hardware interface functions that need to be implemented by the user
+tmc_error_t tmc_hw_init(void);
+
+// GPIO control functions that need to be implemented by the user
+void tmc_gpio_dir_write(const bool dir);
+void tmc_gpio_nen_write(const bool val);
+void tmc_gpio_ms1_write(const bool val);
+void tmc_gpio_ms2_write(const bool val);
+
+// Timer control function that needs to be implemented by the user
+void tmc_tim_step_freq(const float freq_hz);
+
 // Configuration functions
-tmc_error_t tmc_init(const tmc_microstepping_t stepping, const uint32_t steps_per_rev);
+tmc_error_t
+tmc_init(const tmc_microstepping_t stepping, const uint32_t steps_per_rev, const uint8_t address);
+tmc_error_t tmc_set_address(uint8_t address);
 tmc_error_t tmc_configure(const tmc_config_t *config);
 tmc_error_t tmc_set_current(uint16_t hold_current, uint16_t run_current, uint16_t hold_delay);
 tmc_error_t tmc_set_mode(tmc_mode_t mode);
