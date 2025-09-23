@@ -31,8 +31,7 @@ ar_i2c_write(const uint16_t reg, const uint8_t *data, const uint32_t len)
     return AR_ERROR_I2C_FAIL;
 }
 
-ar_error_t __attribute__((weak))
-ar_i2c_read(const uint16_t reg, const uint8_t *data, const uint32_t len)
+ar_error_t __attribute__((weak)) ar_i2c_read(const uint16_t reg, uint8_t *data, const uint32_t len)
 {
     assert(false && "AR driver interface has not been implemented.");
     return AR_ERROR_I2C_FAIL;
