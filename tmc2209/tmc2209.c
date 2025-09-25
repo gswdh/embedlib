@@ -155,7 +155,9 @@ tmc_init(const tmc_microstepping_t stepping, const uint32_t steps_per_rev, const
     }
 
     // Configure the driver
-    return tmc_configure(&tmc_config);
+    // return tmc_configure(&tmc_config);
+
+    return TMC_OK;
 }
 
 tmc_error_t tmc_set_address(uint8_t address)
@@ -379,6 +381,11 @@ tmc_error_t tmc_set_speed(float speed_rpm)
         return tmc_stop();
     }
 
+    tmc_config.direction = !(speed_rpm > 0);
+
+    // Set direction
+    tmc_set_direction(tmc_config.direction);
+
     // Calculate step frequency
     float steps_per_second =
         fabs(speed_rpm) * tmc_config.steps_per_rev * (1 << tmc_config.microstepping) / 60.0f;
@@ -390,10 +397,6 @@ tmc_error_t tmc_set_speed(float speed_rpm)
 tmc_error_t tmc_set_frequency(uint32_t frequency_hz)
 {
     tmc_config.step_frequency = frequency_hz;
-    tmc_config.direction      = (frequency_hz > 0);
-
-    // Set direction
-    tmc_set_direction(tmc_config.direction);
 
     // Use hardware interface to control step frequency
     if (frequency_hz > 0)
