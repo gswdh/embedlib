@@ -64,7 +64,7 @@ void       ar_set_xshutdown(const bool en);
 void       ar_enable_clock(const bool en);
 uint8_t    ar_get_gpio(void);
 ar_error_t ar_i2c_write(const uint16_t reg, const uint8_t *data, const uint32_t len);
-ar_error_t ar_i2c_read(const uint16_t reg, const uint8_t *data, const uint32_t len);
+ar_error_t ar_i2c_read(const uint16_t reg, uint8_t *data, const uint32_t len);
 void       ar_delay_ms(const uint32_t time_ms);
 uint32_t   ar_tick_ms(void);
 
