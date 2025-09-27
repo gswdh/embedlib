@@ -27,3 +27,18 @@ double stats_stdev(double *data, unsigned long len)
 
     return (double)sqrt(stdev / (double)len);
 }
+
+double stats_linear_interp(double a, double b, double coef)
+{
+    if (coef < 0)
+    {
+        coef = 0;
+    }
+
+    if (coef > 1)
+    {
+        coef = 1;
+    }
+
+    return a + ((b - a) * coef);
+}
