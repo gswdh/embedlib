@@ -1,7 +1,7 @@
 /**
  * @file    tmc2209.c
  * @brief   TMC2209 stepper motor driver implementation
- * @version 1.0.0
+ * @version 2.0.0
  *
  * This file contains the complete implementation of the TMC2209 stepper motor
  * driver library, including UART communication, motor control, and speed ramping.
@@ -18,31 +18,33 @@
 
 #include "stats.h"
 
+#define TMC2209_VACTUAL_SCALE_SHIFT (24U)
+#define TMC2209_VACTUAL_MAX         (INT32_C(8388607))
+#define TMC2209_FCLK_DEFAULT_HZ     (12000000UL)
+
 /* ========================================================================== */
 /* GLOBAL VARIABLES                                                           */
 /* ========================================================================== */
 
 /**
- * @brief Global TMC2209 configuration structure
+ * @brief Global TMC2209 ramping structure
  *
- * Contains all driver settings including motor parameters, control modes,
- * and ramping state variables.
+ * Contains all ramping parameters including state variables.
  */
-static tmc_config_t tmc_config = {0};
+static tmc_ramp_t tmc_ramp = {0};
+
+/**
+ * @brief Global TMC2209 node address
+ */
+static uint8_t tmc_node_address = 0;
+
+static tmc_microstep_t tmc_microstepping = TMC_MICROSTEP_256;
 
 /* ========================================================================== */
 /* PRIVATE HELPER FUNCTIONS                                                   */
 /* ========================================================================== */
 
-/**
- * @brief Calculate CRC8 checksum for TMC2209 datagrams
- * @param datagram Pointer to datagram data
- * @param len Length of datagram in bytes
- * @return Calculated CRC8 checksum
- *
- * Implements the CRC8 polynomial 0x07 as specified in the TMC2209 datasheet.
- * Used for error detection in UART communication.
- */
+/* Implements the CRC8 polynomial 0x07 as specified in the TMC2209 datasheet */
 static uint8_t tmc_uart_calc_crc(const uint8_t *datagram, const uint32_t len)
 {
     uint8_t crc = 0;
@@ -68,29 +70,13 @@ static uint8_t tmc_uart_calc_crc(const uint8_t *datagram, const uint32_t len)
     return crc;
 }
 
-/**
- * @brief Transmit write datagram to TMC2209
- * @param tx Pointer to write datagram structure
- * @return TMC_OK on success, error code otherwise
- *
- * Sends a write datagram containing register address and data to the TMC2209.
- * The datagram includes sync word, slave address, register address, payload,
- * and CRC checksum.
- */
+/* Sends a write datagram containing register address and data to the TMC2209 */
 static tmc_error_t tmc_write_datagram(const tmc_write_datagram_t *tx)
 {
     return tmc_uart_tx((const uint8_t *)tx, (uint32_t)sizeof(tmc_write_datagram_t));
 }
 
-/**
- * @brief Transmit read datagram and receive response
- * @param tx Pointer to read datagram structure
- * @param rx Pointer to receive buffer for response
- * @return TMC_OK on success, error code otherwise
- *
- * Sends a read datagram and receives the response from TMC2209.
- * Handles the two-stage UART communication required for register reads.
- */
+/* Sends a read datagram and receives the response from TMC2209 */
 static tmc_error_t tmc_read_datagram(const tmc_read_datagram_t *tx, tmc_write_datagram_t *rx)
 {
     tmc_error_t error = tmc_uart_tx((const uint8_t *)tx, (uint32_t)sizeof(tmc_read_datagram_t));
@@ -106,67 +92,61 @@ static tmc_error_t tmc_read_datagram(const tmc_read_datagram_t *tx, tmc_write_da
     return tmc_uart_rx((uint8_t *)rx, (uint32_t)sizeof(tmc_write_datagram_t), TMC_UART_TIMEOUT_MS);
 }
 
-/**
- * @brief Internal speed ramping engine
- *
- * Handles the non-blocking speed ramping process. Called periodically by
- * tmc_poll() to update motor speed during ramping operations.
- *
- * Uses linear interpolation to smoothly transition between start and target speeds.
- * Runs every 10ms to provide smooth ramping without blocking the main loop.
- */
+/* Internal speed ramping engine - handles non-blocking speed ramping process */
 static void tmc_ramp_engine(void)
 {
     /* Check if ramping is active */
-    if (tmc_config.ramping_active == false)
+    if (tmc_ramp.ramping_active == false)
     {
         return;
     }
 
     /* Rate limit: run every 10ms */
     const uint32_t tick = tmc_get_tick();
-    if (tick < (tmc_config.ramp_tick + 10U))
+    if (tick < (tmc_ramp.ramp_tick + 10U))
     {
         return;
     }
-    tmc_config.ramp_tick = tick;
+    tmc_ramp.ramp_tick = tick;
 
     /* Check if ramping is complete */
-    if (tick > tmc_config.ramp_end_tick)
+    if (tick > tmc_ramp.ramp_end_tick)
     {
         /* Set final target speed and disable ramping */
-        tmc_start(tmc_config.target_speed_rpm);
-        tmc_config.ramping_active = false;
+        tmc_go(tmc_ramp.target_speed_rpm);
+        tmc_ramp.ramping_active = false;
         return;
     }
 
     /* Calculate ramping progress (0.0 to 1.0) */
-    const double completeness =
-        ((double)tick - (double)tmc_config.ramp_start_tick) /
-        ((double)tmc_config.ramp_end_tick - (double)tmc_config.ramp_start_tick);
+    const double completeness = ((double)tick - (double)tmc_ramp.ramp_start_tick) /
+                                ((double)tmc_ramp.ramp_end_tick - (double)tmc_ramp.ramp_start_tick);
 
     /* Interpolate between start and target speed */
     const double new_speed = stats_linear_interp(
-        (double)tmc_config.start_speed_rpm, (double)tmc_config.target_speed_rpm, completeness);
+        (double)tmc_ramp.start_speed_rpm, (double)tmc_ramp.target_speed_rpm, completeness);
 
     /* Apply the interpolated speed */
-    tmc_start((const float)new_speed);
+    tmc_go((const float)new_speed);
+}
+
+/* Returns VACTUAL clamped to the valid signed 24-bit range.
+ * speed_rpm: target speed in RPM (can be negative for reverse)
+ * full_steps_per_rev: motor full steps per mechanical revolution (e.g., 400 for 0.9°)
+ * fclk_hz: TMC2209 clock in Hz (12,000,000 by default)
+ */
+/* Compute step frequency from RPM */
+static float tmc2209_compute_step_frequency_rpm(float speed_rpm, uint16_t full_steps_per_rev)
+{
+    /* Calculate step frequency: (RPM * full_steps_per_rev * microsteps_per_step) / 60 */
+    return (float)fabs((speed_rpm * (float)full_steps_per_rev * (float)256.0f) / 1200.0f);
 }
 
 /* ========================================================================== */
 /* REGISTER READ/WRITE FUNCTIONS                                              */
 /* ========================================================================== */
 
-/**
- * @brief Write a register to TMC2209
- * @param node TMC2209 node address (0-3)
- * @param addr Register address
- * @param value 32-bit value to write
- * @return TMC_OK on success, error code otherwise
- *
- * Writes a 32-bit value to the specified TMC2209 register.
- * Handles datagram construction, CRC calculation, and UART transmission.
- */
+/* Writes a 32-bit value to the specified TMC2209 register */
 tmc_error_t tmc_write_reg(const uint8_t node, const uint8_t addr, const uint32_t value)
 {
     /* Construct write datagram */
@@ -188,16 +168,7 @@ tmc_error_t tmc_write_reg(const uint8_t node, const uint8_t addr, const uint32_t
     return tmc_write_datagram((const tmc_write_datagram_t *)&tx);
 }
 
-/**
- * @brief Read a register from TMC2209
- * @param node TMC2209 node address (0-3)
- * @param addr Register address
- * @param value Pointer to store the read value
- * @return TMC_OK on success, error code otherwise
- *
- * Reads a 32-bit value from the specified TMC2209 register.
- * Handles datagram construction, CRC verification, and response validation.
- */
+/* Reads a 32-bit value from the specified TMC2209 register */
 tmc_error_t tmc_read_reg(const uint8_t node, const uint8_t addr, uint32_t *value)
 {
     /* Construct read datagram */
@@ -242,18 +213,8 @@ tmc_error_t tmc_read_reg(const uint8_t node, const uint8_t addr, uint32_t *value
 /* INITIALIZATION AND CONFIGURATION FUNCTIONS                                */
 /* ========================================================================== */
 
-/**
- * @brief Initialize TMC2209 driver
- * @param stepping Microstepping mode
- * @param steps_per_rev Steps per revolution of the motor
- * @param address TMC2209 node address (0-3)
- * @return TMC_OK on success, error code otherwise
- *
- * Initializes the TMC2209 driver with default settings and verifies
- * communication. Sets up motor parameters and driver configuration.
- */
-tmc_error_t
-tmc_init(const tmc_microstepping_t stepping, const uint32_t steps_per_rev, const uint8_t address)
+/* Initialize TMC2209 driver with default settings and verify communication */
+tmc_error_t tmc_init(const uint8_t serial_address)
 {
     /* Initialize hardware interface */
     tmc_error_t error = tmc_hw_init();
@@ -263,35 +224,51 @@ tmc_init(const tmc_microstepping_t stepping, const uint32_t steps_per_rev, const
     }
 
     /* Set TMC2209 node address */
-    error = tmc_set_address(address);
+    error = tmc_set_address(serial_address);
     if (error != TMC_OK)
     {
         return error;
     }
 
-    /* Initialize configuration structure with defaults */
-    memset(&tmc_config, 0, sizeof(tmc_config));
-    tmc_config.node_address          = 0x00;
-    tmc_config.steps_per_rev         = steps_per_rev;
-    tmc_config.microstepping         = stepping;
-    tmc_config.mode                  = TMC_STEALTHCHOP;
-    tmc_config.current_hold          = 500; /* 500mA hold current */
-    tmc_config.current_run           = 800; /* 800mA run current */
-    tmc_config.current_hold_delay    = 10;
-    tmc_config.stealthchop_threshold = 0;
-    tmc_config.coolstep_threshold    = 0;
-    tmc_config.stall_threshold       = 0;
-    tmc_config.enabled               = false;
-    tmc_config.direction             = true;
-    tmc_config.step_frequency        = 0;
+    /* Store node address */
+    tmc_node_address = serial_address;
 
     /* Initialize ramping state */
-    tmc_config.current_speed_rpm = 0.0f;
-    tmc_config.ramping_active    = false;
+    memset(&tmc_ramp, 0, sizeof(tmc_ramp_t));
+    tmc_ramp.ramping_active = false;
 
-    /* Verify communication by reading GSTAT register */
-    uint32_t gstat = 0;
-    error          = tmc_read_reg(tmc_config.node_address, TMC_REG_GSTAT, &gstat);
+    /* Verify communication */
+    if (tmc_is_communicating() == false)
+    {
+        return TMC_ERROR_INIT;
+    }
+
+    /* Get version needs a delay for some reason */
+    tmc_delay_ms(1U);
+
+    /* Configure external sense resistors */
+    error = tmc_use_external_sense_resistors();
+    if (error != TMC_OK)
+    {
+        return TMC_ERROR_INIT;
+    }
+
+    /* Set hold current to 10% */
+    error = tmc_set_hold_current(10U);
+    if (error != TMC_OK)
+    {
+        return TMC_ERROR_INIT;
+    }
+
+    /* Set run current to 100% */
+    error = tmc_set_run_current(100U);
+    if (error != TMC_OK)
+    {
+        return TMC_ERROR_INIT;
+    }
+
+    /* Set microstep resolution to 256 microsteps per step */
+    error = tmc_set_microsteps_per_step(TMC_MICROSTEP_256);
     if (error != TMC_OK)
     {
         return TMC_ERROR_INIT;
@@ -300,14 +277,7 @@ tmc_init(const tmc_microstepping_t stepping, const uint32_t steps_per_rev, const
     return TMC_OK;
 }
 
-/**
- * @brief Set TMC2209 node address
- * @param address Node address (0-3)
- * @return TMC_OK on success, error code otherwise
- *
- * Sets the TMC2209 node address by configuring MS1 and MS2 pins.
- * Address is encoded as: MS2(MSB) MS1(LSB)
- */
+/* Set TMC2209 node address by configuring MS1 and MS2 pins */
 tmc_error_t tmc_set_address(uint8_t address)
 {
     /* Validate address range (0-3) */
@@ -320,651 +290,393 @@ tmc_error_t tmc_set_address(uint8_t address)
     bool ms1 = (address & 0x01) != 0; /* LSB */
     bool ms2 = (address & 0x02) != 0; /* MSB */
 
+    /* Set the MS1 and MS2 pins to configure the node address */
     tmc_gpio_ms1_write(ms1);
     tmc_gpio_ms2_write(ms2);
 
     return TMC_OK;
 }
 
-/**
- * @brief Configure TMC2209 with custom settings
- * @param config Pointer to configuration structure
- * @return TMC_OK on success, error code otherwise
- *
- * Applies a complete configuration to the TMC2209 driver.
- * Configures chopper, current, thresholds, and PWM settings.
- */
-tmc_error_t tmc_configure(const tmc_config_t *config)
+/* ========================================================================== */
+/* MICROSTEP CONFIGURATION FUNCTIONS                                          */
+/* ========================================================================== */
+
+tmc_error_t tmc_set_microsteps_per_step(tmc_microstep_t microsteps)
 {
-    if (config == NULL)
+    /* Validate microsteps per step (must be power of 2, 1-256) */
+    if (microsteps == 0 || microsteps > 256)
     {
         return TMC_ERROR_INVALID_PARAM;
     }
 
-    /* Copy configuration to internal structure */
-    memcpy(&tmc_config, config, sizeof(tmc_config_t));
-
-    /* Configure CHOPCONF register for chopper settings */
-    uint32_t chopconf = 0;
-    chopconf |= (tmc_config.microstepping & 0x07) << 0; /* MRES[2:0] - Microstep resolution */
-    chopconf |= (1 << 7);                               /* TBL[1:0] = 1 - Blank time */
-    chopconf |= (1 << 15);                              /* TOFF[3:0] = 1 - Off time */
-    chopconf |= (1 << 19);                              /* HSTRT[2:0] = 1 - Hysteresis start */
-    chopconf |= (1 << 22);                              /* HEND[2:0] = 1 - Hysteresis end */
-    chopconf |= (1 << 25);                              /* FD[2:0] = 1 - Fast decay */
-    chopconf |= (1 << 28);                              /* DISFDCC = 1 - Disable fast decay */
-    chopconf |= (1 << 30);                              /* RNDTF = 1 - Random TOFF */
-    chopconf |= (1 << 31);                              /* CHM = 1 (SpreadCycle mode) */
-
-    tmc_error_t error = tmc_write_reg(tmc_config.node_address, TMC_REG_CHOPCONF, chopconf);
-    if (error != TMC_OK)
+    /* Check if it's a power of 2 */
+    if ((microsteps & (microsteps - 1)) != 0)
     {
-        return error;
+        return TMC_ERROR_INVALID_PARAM;
     }
 
-    /* Configure IHOLD_IRUN register for current settings */
-    uint32_t ihold_irun = 0;
-    ihold_irun |= (tmc_config.current_hold & 0x1F) << 0;        /* IHOLD[4:0] - Hold current */
-    ihold_irun |= (tmc_config.current_run & 0x1F) << 8;         /* IRUN[4:0] - Run current */
-    ihold_irun |= (tmc_config.current_hold_delay & 0x0F) << 16; /* IHOLDDELAY[3:0] - Hold delay */
+    /* Update the global */
+    tmc_microstepping = microsteps;
 
-    error = tmc_write_reg(tmc_config.node_address, TMC_REG_IHOLD_IRUN, ihold_irun);
-    if (error != TMC_OK)
+    /* Calculate the microstep register value */
+    uint8_t  mres = 0;
+    uint16_t temp = (uint16_t)microsteps;
+    while (temp > 1)
     {
-        return error;
+        temp >>= 1;
+        mres++;
     }
 
-    /* Configure TPOWERDOWN register (power down time) */
-    error = tmc_write_reg(tmc_config.node_address, TMC_REG_TPOWERDOWN, 0x00000000);
-    if (error != TMC_OK)
+    /* Read current CHOPCONF register */
+    uint32_t    chopconf = 0;
+    tmc_error_t result   = tmc_read_reg(tmc_node_address, TMC_REG_CHOPCONF, &chopconf);
+    if (result != TMC_OK)
     {
-        return error;
+        return result;
     }
 
-    /* Configure TPWMTHRS register (StealthChop threshold) */
-    uint32_t tpwmthrs = (uint32_t)tmc_config.stealthchop_threshold << 0;
-    error             = tmc_write_reg(tmc_config.node_address, TMC_REG_TPWMTHRS, tpwmthrs);
-    if (error != TMC_OK)
+    /* Update MRES field (bits 27-24) */
+    chopconf &= ~(0x0F << 24); /* Clear MRES field */
+    chopconf |= (mres << 24);  /* Set MRES field */
+
+    /* Update global microstepping variable */
+    tmc_microstepping = microsteps;
+
+    /* Write back to register */
+    return tmc_write_reg(tmc_node_address, TMC_REG_CHOPCONF, chopconf);
+}
+
+tmc_error_t tmc_set_microsteps_per_step_power_of_two(uint8_t exponent)
+{
+    if (exponent > 8)
     {
-        return error;
+        return TMC_ERROR_INVALID_PARAM;
     }
 
-    /* Configure TCOOLTHRS register (CoolStep threshold) */
-    uint32_t tcoolthrs = (uint32_t)tmc_config.coolstep_threshold << 0;
-    error              = tmc_write_reg(tmc_config.node_address, TMC_REG_TCOOLTHRS, tcoolthrs);
-    if (error != TMC_OK)
+    uint16_t microsteps = 1 << exponent;
+    return tmc_set_microsteps_per_step(microsteps);
+}
+
+/* ========================================================================== */
+/* CURRENT CONTROL FUNCTIONS                                                   */
+/* ========================================================================== */
+
+tmc_error_t tmc_set_run_current(uint8_t percent)
+{
+    if (percent > 100)
     {
-        return error;
+        return TMC_ERROR_INVALID_PARAM;
     }
 
-    /* Configure THIGH register (stall detection threshold) */
-    uint32_t thigh = (uint32_t)tmc_config.stall_threshold << 0;
-    error          = tmc_write_reg(tmc_config.node_address, TMC_REG_THIGH, thigh);
-    if (error != TMC_OK)
+    /* Convert percentage to register value (0-31) */
+    uint8_t irun = (percent * 31) / 100;
+    if (irun == 0 && percent > 0)
     {
-        return error;
+        irun = 1; /* Minimum value */
     }
 
-    /* Configure PWMCONF register for StealthChop PWM settings */
-    uint32_t pwmconf = 0;
-    pwmconf |= (1 << 0);  /* PWM_AMPL[7:0] = 1 - PWM amplitude */
-    pwmconf |= (1 << 8);  /* PWM_GRAD[7:0] = 1 - PWM gradient */
-    pwmconf |= (1 << 16); /* PWM_FREQ[1:0] = 1 - PWM frequency */
-    pwmconf |= (1 << 18); /* PWM_AUTOSCALE = 1 - Auto scale */
-    pwmconf |= (1 << 19); /* PWM_AUTOGRAD = 1 - Auto gradient */
-    pwmconf |= (1 << 20); /* FREEWHEEL[1:0] = 1 - Freewheeling */
-
-    error = tmc_write_reg(tmc_config.node_address, TMC_REG_PWMCONF, pwmconf);
-    if (error != TMC_OK)
+    /* Read current IHOLD_IRUN register */
+    uint32_t    ihold_irun = 0;
+    tmc_error_t result     = tmc_read_reg(tmc_node_address, TMC_REG_IHOLD_IRUN, &ihold_irun);
+    if (result != TMC_OK)
     {
-        return error;
+        return result;
+    }
+
+    /* Update IRUN field (bits 12-8) */
+    ihold_irun &= ~(0x1F << 8); /* Clear IRUN field */
+    ihold_irun |= (irun << 8);  /* Set IRUN field */
+
+    /* Write back to register */
+    return tmc_write_reg(tmc_node_address, TMC_REG_IHOLD_IRUN, ihold_irun);
+}
+
+tmc_error_t tmc_set_hold_current(uint8_t percent)
+{
+    if (percent > 100)
+    {
+        return TMC_ERROR_INVALID_PARAM;
+    }
+
+    /* Convert percentage to register value (0-31) */
+    uint8_t ihold = (percent * 31) / 100;
+    if (ihold == 0 && percent > 0)
+    {
+        ihold = 1; /* Minimum value */
+    }
+
+    /* Read current IHOLD_IRUN register */
+    uint32_t    ihold_irun = 0;
+    tmc_error_t result     = tmc_read_reg(tmc_node_address, TMC_REG_IHOLD_IRUN, &ihold_irun);
+    if (result != TMC_OK)
+    {
+        return result;
+    }
+
+    /* Update IHOLD field (bits 4-0) */
+    ihold_irun &= ~0x1F; /* Clear IHOLD field */
+    ihold_irun |= ihold; /* Set IHOLD field */
+
+    /* Write back to register */
+    return tmc_write_reg(tmc_node_address, TMC_REG_IHOLD_IRUN, ihold_irun);
+}
+
+tmc_error_t tmc_set_hold_delay(uint8_t percent)
+{
+    if (percent > 100)
+    {
+        return TMC_ERROR_INVALID_PARAM;
+    }
+
+    /* Convert percentage to register value (0-15) */
+    uint8_t iholddelay = (percent * 15) / 100;
+
+    /* Read current IHOLD_IRUN register */
+    uint32_t    ihold_irun = 0;
+    tmc_error_t result     = tmc_read_reg(tmc_node_address, TMC_REG_IHOLD_IRUN, &ihold_irun);
+    if (result != TMC_OK)
+    {
+        return result;
+    }
+
+    /* Update IHOLDDELAY field (bits 16-20) */
+    ihold_irun &= ~(0x0F << 16);      /* Clear IHOLDDELAY field */
+    ihold_irun |= (iholddelay << 16); /* Set IHOLDDELAY field */
+
+    /* Write back to register */
+    return tmc_write_reg(tmc_node_address, TMC_REG_IHOLD_IRUN, ihold_irun);
+}
+
+tmc_error_t tmc_set_all_current_values(uint8_t run_current_percent,
+                                       uint8_t hold_current_percent,
+                                       uint8_t hold_delay_percent)
+{
+    tmc_error_t result;
+
+    /* Set run current */
+    result = tmc_set_run_current(run_current_percent);
+    if (result != TMC_OK)
+    {
+        return result;
+    }
+
+    /* Set hold current */
+    result = tmc_set_hold_current(hold_current_percent);
+    if (result != TMC_OK)
+    {
+        return result;
+    }
+
+    /* Set hold delay */
+    result = tmc_set_hold_delay(hold_delay_percent);
+    if (result != TMC_OK)
+    {
+        return result;
     }
 
     return TMC_OK;
 }
 
-/**
- * @brief Set motor current settings
- * @param hold_current Hold current in mA
- * @param run_current Run current in mA
- * @param hold_delay Hold delay in steps
- * @return TMC_OK on success, error code otherwise
- *
- * Configures the motor current settings for hold and run modes.
- * Current values are automatically scaled by the TMC2209.
- */
-tmc_error_t tmc_set_current(uint16_t hold_current, uint16_t run_current, uint16_t hold_delay)
+tmc_error_t tmc_set_rms_current(uint16_t mA, float r_sense, float hold_multiplier)
 {
-    /* Update internal configuration */
-    tmc_config.current_hold       = hold_current;
-    tmc_config.current_run        = run_current;
-    tmc_config.current_hold_delay = hold_delay;
+    if (r_sense <= 0.0f || hold_multiplier <= 0.0f || hold_multiplier > 1.0f)
+    {
+        return TMC_ERROR_INVALID_PARAM;
+    }
 
-    /* Configure IHOLD_IRUN register */
-    uint32_t ihold_irun = 0;
-    ihold_irun |= (hold_current & 0x1F) << 0; /* IHOLD[4:0] - Hold current */
-    ihold_irun |= (run_current & 0x1F) << 8;  /* IRUN[4:0] - Run current */
-    ihold_irun |= (hold_delay & 0x0F) << 16;  /* IHOLDDELAY[3:0] - Hold delay */
+    /* Calculate run current setting */
+    float   irun_float = (mA * r_sense * 32.0f) / (325.0f * 1.414f);
+    uint8_t irun       = (uint8_t)irun_float;
+    if (irun > 31)
+        irun = 31;
+    if (irun == 0 && mA > 0)
+        irun = 1;
 
-    return tmc_write_reg(tmc_config.node_address, TMC_REG_IHOLD_IRUN, ihold_irun);
+    /* Calculate hold current setting */
+    float   ihold_float = irun_float * hold_multiplier;
+    uint8_t ihold       = (uint8_t)ihold_float;
+    if (ihold > 31)
+        ihold = 31;
+    if (ihold == 0 && mA > 0)
+        ihold = 1;
+
+    /* Read current IHOLD_IRUN register */
+    uint32_t    ihold_irun = 0;
+    tmc_error_t result     = tmc_read_reg(tmc_node_address, TMC_REG_IHOLD_IRUN, &ihold_irun);
+    if (result != TMC_OK)
+    {
+        return result;
+    }
+
+    /* Update both IRUN and IHOLD fields */
+    ihold_irun &= ~0x1F; /* Clear IRUN field */
+    ihold_irun |= irun;  /* Set IRUN field */
+
+    ihold_irun &= ~(0x1F << 8); /* Clear IHOLD field */
+    ihold_irun |= (ihold << 8); /* Set IHOLD field */
+
+    /* Write back to register */
+    return tmc_write_reg(tmc_node_address, TMC_REG_IHOLD_IRUN, ihold_irun);
 }
 
-/**
- * @brief Set TMC2209 operating mode
- * @param mode Operating mode (StealthChop or SpreadCycle)
- * @return TMC_OK on success, error code otherwise
- *
- * Switches between StealthChop (silent) and SpreadCycle (high torque) modes.
- * StealthChop provides silent operation, SpreadCycle provides maximum torque.
- */
-tmc_error_t tmc_set_mode(tmc_mode_t mode)
-{
-    tmc_config.mode = mode;
+/* ========================================================================== */
+/* CHOPPER CONFIGURATION FUNCTIONS                                            */
+/* ========================================================================== */
 
+tmc_error_t tmc_enable_double_edge(void)
+{
     /* Read current CHOPCONF register */
     uint32_t    chopconf = 0;
-    tmc_error_t error    = tmc_read_reg(tmc_config.node_address, TMC_REG_CHOPCONF, &chopconf);
-    if (error != TMC_OK)
+    tmc_error_t result   = tmc_read_reg(tmc_node_address, TMC_REG_CHOPCONF, &chopconf);
+    if (result != TMC_OK)
     {
-        return error;
+        return result;
     }
 
-    /* Configure CHM bit for mode selection */
-    if (mode == TMC_STEALTHCHOP)
-    {
-        chopconf &= ~(1 << 31); /* Clear CHM bit for StealthChop */
-    }
-    else
-    {
-        chopconf |= (1 << 31); /* Set CHM bit for SpreadCycle */
-    }
+    /* Set DEDGE bit (bit 2) */
+    chopconf |= (1 << 2);
 
-    return tmc_write_reg(tmc_config.node_address, TMC_REG_CHOPCONF, chopconf);
+    /* Write back to register */
+    return tmc_write_reg(tmc_node_address, TMC_REG_CHOPCONF, chopconf);
 }
 
-/**
- * @brief Set microstepping resolution
- * @param stepping Microstepping mode
- * @return TMC_OK on success, error code otherwise
- *
- * Configures the microstepping resolution from 1/2 to 1/256 steps.
- * Higher microstepping provides smoother motion but requires higher step rates.
- */
-tmc_error_t tmc_set_microstepping(const tmc_microstepping_t stepping)
+tmc_error_t tmc_disable_double_edge(void)
 {
-    tmc_config.microstepping = stepping;
-
     /* Read current CHOPCONF register */
     uint32_t    chopconf = 0;
-    tmc_error_t error    = tmc_read_reg(tmc_config.node_address, TMC_REG_CHOPCONF, &chopconf);
-    if (error != TMC_OK)
+    tmc_error_t result   = tmc_read_reg(tmc_node_address, TMC_REG_CHOPCONF, &chopconf);
+    if (result != TMC_OK)
     {
-        return error;
+        return result;
     }
 
-    /* Clear and set MRES bits for microstepping */
-    chopconf &= ~(0x07 << 0);
-    chopconf |= (stepping & 0x07) << 0;
+    /* Clear DEDGE bit (bit 2) */
+    chopconf &= ~(1 << 2);
 
-    return tmc_write_reg(tmc_config.node_address, TMC_REG_CHOPCONF, chopconf);
+    /* Write back to register */
+    return tmc_write_reg(tmc_node_address, TMC_REG_CHOPCONF, chopconf);
 }
 
-/**
- * @brief Set TMC2209 threshold values
- * @param stealthchop_threshold StealthChop threshold
- * @param coolstep_threshold CoolStep threshold
- * @param stall_threshold Stall detection threshold
- * @return TMC_OK on success, error code otherwise
- *
- * Configures the threshold values for StealthChop, CoolStep, and stall detection.
- * These thresholds determine when the driver switches between different modes.
- */
-tmc_error_t tmc_set_thresholds(uint8_t stealthchop_threshold,
-                               uint8_t coolstep_threshold,
-                               uint8_t stall_threshold)
+tmc_error_t tmc_enable_vsense(void)
 {
-    /* Update internal configuration */
-    tmc_config.stealthchop_threshold = stealthchop_threshold;
-    tmc_config.coolstep_threshold    = coolstep_threshold;
-    tmc_config.stall_threshold       = stall_threshold;
-
-    tmc_error_t error;
-
-    /* Set StealthChop threshold (TPWMTHRS register) */
-    uint32_t tpwmthrs = (uint32_t)stealthchop_threshold << 0;
-    error             = tmc_write_reg(tmc_config.node_address, TMC_REG_TPWMTHRS, tpwmthrs);
-    if (error != TMC_OK)
+    /* Read current CHOPCONF register */
+    uint32_t    chopconf = 0;
+    tmc_error_t result   = tmc_read_reg(tmc_node_address, TMC_REG_CHOPCONF, &chopconf);
+    if (result != TMC_OK)
     {
-        return error;
+        return result;
     }
 
-    /* Set CoolStep threshold (TCOOLTHRS register) */
-    uint32_t tcoolthrs = (uint32_t)coolstep_threshold << 0;
-    error              = tmc_write_reg(tmc_config.node_address, TMC_REG_TCOOLTHRS, tcoolthrs);
-    if (error != TMC_OK)
+    /* Set VSENSE bit (bit 1) */
+    chopconf |= (1 << 1);
+
+    /* Write back to register */
+    return tmc_write_reg(tmc_node_address, TMC_REG_CHOPCONF, chopconf);
+}
+
+tmc_error_t tmc_disable_vsense(void)
+{
+    /* Read current CHOPCONF register */
+    uint32_t    chopconf = 0;
+    tmc_error_t result   = tmc_read_reg(tmc_node_address, TMC_REG_CHOPCONF, &chopconf);
+    if (result != TMC_OK)
     {
-        return error;
+        return result;
     }
 
-    /* Set stall detection threshold (THIGH register) */
-    uint32_t thigh = (uint32_t)stall_threshold << 0;
-    return tmc_write_reg(tmc_config.node_address, TMC_REG_THIGH, thigh);
+    /* Clear VSENSE bit (bit 1) */
+    chopconf &= ~(1 << 1);
+
+    /* Write back to register */
+    return tmc_write_reg(tmc_node_address, TMC_REG_CHOPCONF, chopconf);
+}
+
+/* ========================================================================== */
+/* MOTOR DIRECTION CONTROL FUNCTIONS                                          */
+/* ========================================================================== */
+
+tmc_error_t tmc_enable_inverse_motor_direction(void)
+{
+    /* Read current GCONF register */
+    uint32_t    gconf  = 0;
+    tmc_error_t result = tmc_read_reg(tmc_node_address, TMC_REG_GCONF, &gconf);
+    if (result != TMC_OK)
+    {
+        return result;
+    }
+
+    /* Set SHIFT bit (bit 4) */
+    gconf |= (1 << 4);
+
+    /* Write back to register */
+    return tmc_write_reg(tmc_node_address, TMC_REG_GCONF, gconf);
+}
+
+tmc_error_t tmc_disable_inverse_motor_direction(void)
+{
+    /* Read current GCONF register */
+    uint32_t    gconf  = 0;
+    tmc_error_t result = tmc_read_reg(tmc_node_address, TMC_REG_GCONF, &gconf);
+    if (result != TMC_OK)
+    {
+        return result;
+    }
+
+    /* Clear SHIFT bit (bit 4) */
+    gconf &= ~(1 << 4);
+
+    /* Write back to register */
+    return tmc_write_reg(tmc_node_address, TMC_REG_GCONF, gconf);
 }
 
 /* ========================================================================== */
 /* MOTOR CONTROL FUNCTIONS                                                    */
 /* ========================================================================== */
 
-/**
- * @brief Enable or disable TMC2209 driver
- * @param enable true to enable, false to disable
- * @return TMC_OK on success, error code otherwise
- *
- * Controls the enable pin of the TMC2209 driver.
- * When disabled, the motor is in high-impedance state.
- */
-tmc_error_t tmc_enable(bool enable)
+/* Enable or disable TMC2209 driver */
+tmc_error_t tmc_enable_driver(bool enable)
 {
-    tmc_config.enabled = enable;
-
-    /* Control enable pin (NEN is active low) */
+    /* Control the enable pin (active low) */
     tmc_gpio_nen_write(!enable);
-
     return TMC_OK;
 }
 
-/**
- * @brief Set motor direction
- * @param direction true for forward, false for reverse
- * @return TMC_OK on success, error code otherwise
- *
- * Sets the direction pin to control motor rotation direction.
- * Direction is relative to the motor's wiring and microstepping configuration.
- */
-tmc_error_t tmc_set_direction(bool direction)
+/* Set motor direction */
+void tmc_set_direction(bool direction)
 {
-    tmc_config.direction = direction;
-
-    /* Control direction pin */
-    tmc_gpio_dir_write(direction);
-
-    return TMC_OK;
+    /* Set the direction pin */
+    tmc_gpio_dir_write(!direction);
 }
 
-/**
- * @brief Set motor speed in RPM
- * @param speed_rpm Speed in revolutions per minute (can be negative)
- * @return TMC_OK on success, error code otherwise
- *
- * Sets the motor speed in RPM. Negative values indicate reverse direction.
- * Automatically calculates step frequency and sets direction.
- */
-tmc_error_t tmc_set_speed(float speed_rpm)
+void tmc_set_speed(const float speed_rpm)
 {
-    /* Update current speed for ramping calculations */
-    tmc_config.current_speed_rpm = speed_rpm;
+    tmc_ramp.current_speed = speed_rpm;
 
-    /* Handle stop condition */
-    if ((speed_rpm < 0.01f) && (speed_rpm > -0.01f))
-    {
-        return tmc_stop();
-    }
-
-    /* Determine direction from speed sign */
-    tmc_config.direction = !(speed_rpm > 0);
-
-    /* Set motor direction */
-    tmc_set_direction(tmc_config.direction);
-
-    /* Calculate step frequency from RPM */
-    float steps_per_second =
-        fabs(speed_rpm) * tmc_config.steps_per_rev * (1 << tmc_config.microstepping) / 60.0f;
-    uint32_t frequency = (uint32_t)steps_per_second;
-
-    return tmc_set_frequency(frequency);
+    /* Set timer frequency for step generation */
+    tmc_tim_step_freq(tmc2209_compute_step_frequency_rpm(speed_rpm, 400U));
 }
 
-/**
- * @brief Set step frequency directly
- * @param frequency_hz Step frequency in Hz
- * @return TMC_OK on success, error code otherwise
- *
- * Sets the step frequency directly in Hz. Used internally by tmc_set_speed()
- * and for direct frequency control.
- */
-tmc_error_t tmc_set_frequency(uint32_t frequency_hz)
+void tmc_set_velocity(const float speed_rpm)
 {
-    tmc_config.step_frequency = frequency_hz;
+    /* Set direction based on speed sign */
+    tmc_set_direction(speed_rpm >= 0.0f);
 
-    /* Configure timer for step generation */
-    if (frequency_hz > 0)
-    {
-        tmc_tim_step_freq((float)frequency_hz);
-    }
-
-    return TMC_OK;
+    tmc_set_speed(speed_rpm);
 }
 
-/**
- * @brief Start motor with specified speed
- * @param speed_rpm Speed in RPM
- * @return TMC_OK on success, error code otherwise
- *
- * Enables the driver and sets the motor speed. Combines tmc_enable()
- * and tmc_set_speed() for convenience.
- */
-tmc_error_t tmc_start(const float speed_rpm)
+void tmc_go(const float speed_rpm)
 {
-    /* Enable the driver */
-    tmc_error_t error = tmc_enable(true);
-    if (error != TMC_OK)
-    {
-        return error;
-    }
+    tmc_set_velocity(speed_rpm);
 
-    /* Set the speed */
-    return tmc_set_speed(speed_rpm);
-}
-
-/**
- * @brief Stop motor immediately
- * @return TMC_OK on success, error code otherwise
- *
- * Stops the motor by setting frequency to zero and disabling the driver.
- * Provides immediate stop without ramping.
- */
-tmc_error_t tmc_stop(void)
-{
-    tmc_config.step_frequency = 0;
-
-    /* Disable the driver */
-    return tmc_enable(false);
-}
-
-/* ========================================================================== */
-/* STATUS AND MONITORING FUNCTIONS                                            */
-/* ========================================================================== */
-
-/**
- * @brief Get TMC2209 driver status
- * @param status Pointer to store status register value
- * @return TMC_OK on success, error code otherwise
- *
- * Reads the DRV_STATUS register containing motor status information
- * including stall detection, temperature, and current measurements.
- */
-tmc_error_t tmc_get_status(uint32_t *status)
-{
-    if (status == NULL)
-    {
-        return TMC_ERROR_INVALID_PARAM;
-    }
-
-    return tmc_read_reg(tmc_config.node_address, TMC_REG_DRV_STATUS, status);
-}
-
-/**
- * @brief Get motor position
- * @param position Pointer to store position value
- * @return TMC_OK on success, error code otherwise
- *
- * Reads the XDIRECT register containing the current motor position.
- * Position is relative to the last reset or initialization.
- */
-tmc_error_t tmc_get_position(uint32_t *position)
-{
-    if (position == NULL)
-    {
-        return TMC_ERROR_INVALID_PARAM;
-    }
-
-    return tmc_read_reg(tmc_config.node_address, TMC_REG_XDIRECT, position);
-}
-
-/**
- * @brief Get motor speed
- * @param speed Pointer to store speed value
- * @return TMC_OK on success, error code otherwise
- *
- * Reads the TSTEP register containing the current step timing.
- * Can be used to calculate actual motor speed.
- */
-tmc_error_t tmc_get_speed(uint32_t *speed)
-{
-    if (speed == NULL)
-    {
-        return TMC_ERROR_INVALID_PARAM;
-    }
-
-    return tmc_read_reg(tmc_config.node_address, TMC_REG_TSTEP, speed);
-}
-
-/**
- * @brief Get motor current
- * @param current Pointer to store current value
- * @return TMC_OK on success, error code otherwise
- *
- * Reads the actual motor current from the DRV_STATUS register.
- * Current is returned as a 5-bit value representing the current scale.
- */
-tmc_error_t tmc_get_current(uint16_t *current)
-{
-    if (current == NULL)
-    {
-        return TMC_ERROR_INVALID_PARAM;
-    }
-
-    uint32_t    drv_status = 0;
-    tmc_error_t error      = tmc_read_reg(tmc_config.node_address, TMC_REG_DRV_STATUS, &drv_status);
-    if (error != TMC_OK)
-    {
-        return error;
-    }
-
-    /* Extract current from DRV_STATUS register (CS_ACTUAL field) */
-    *current = (uint16_t)((drv_status >> 0) & 0x1F);
-    return TMC_OK;
-}
-
-/**
- * @brief Get motor temperature
- * @param temperature Pointer to store temperature value
- * @return TMC_OK on success, error code otherwise
- *
- * Reads the motor temperature from the DRV_STATUS register.
- * Temperature is returned as an 8-bit value representing the temperature scale.
- */
-tmc_error_t tmc_get_temperature(uint16_t *temperature)
-{
-    if (temperature == NULL)
-    {
-        return TMC_ERROR_INVALID_PARAM;
-    }
-
-    uint32_t    drv_status = 0;
-    tmc_error_t error      = tmc_read_reg(tmc_config.node_address, TMC_REG_DRV_STATUS, &drv_status);
-    if (error != TMC_OK)
-    {
-        return error;
-    }
-
-    /* Extract temperature from DRV_STATUS register */
-    *temperature = (uint16_t)((drv_status >> 16) & 0xFF);
-    return TMC_OK;
-}
-
-/**
- * @brief Get stall detection status
- * @param stalled Pointer to store stall status
- * @return TMC_OK on success, error code otherwise
- *
- * Reads the stall detection status from the DRV_STATUS register.
- * Returns true if a stall condition is detected.
- */
-tmc_error_t tmc_get_stall_status(bool *stalled)
-{
-    if (stalled == NULL)
-    {
-        return TMC_ERROR_INVALID_PARAM;
-    }
-
-    uint32_t    drv_status = 0;
-    tmc_error_t error      = tmc_read_reg(tmc_config.node_address, TMC_REG_DRV_STATUS, &drv_status);
-    if (error != TMC_OK)
-    {
-        return error;
-    }
-
-    /* Check stall detection bit (STALLGUARD field) */
-    *stalled = (bool)((drv_status >> 24) & 0x01);
-    return TMC_OK;
-}
-
-/**
- * @brief Get human-readable status string
- * @param status Status register value
- * @return Pointer to formatted status string
- *
- * Converts the DRV_STATUS register value into a human-readable string
- * containing all status information including warnings and errors.
- */
-char *tmc_get_status_string(uint32_t status)
-{
-    static char status_str[512];
-    int         offset = 0;
-
-    /* Clear the buffer */
-    memset(status_str, 0, sizeof(status_str));
-
-    /* Extract status bits from DRV_STATUS register */
-    uint16_t sg_result  = (status >> 0) & 0x3FF; /* SG_RESULT[9:0] - StallGuard2 result */
-    uint8_t  fsactive   = (status >> 15) & 0x01; /* FSACTIVE - Full step active (bit 15) */
-    uint8_t  cs_actual  = (status >> 16) & 0x1F; /* CS_ACTUAL[4:0] - Actual motor current */
-    uint8_t  stallguard = (status >> 24) & 0x01; /* STALLGUARD - Stall detected */
-    uint8_t  ot         = (status >> 25) & 0x01; /* OT - Overtemperature prewarning */
-    uint8_t  otpw       = (status >> 26) & 0x01; /* OTPW - Overtemperature warning */
-    uint8_t  s2ga       = (status >> 27) & 0x01; /* S2GA - Short to ground phase A */
-    uint8_t  s2gb       = (status >> 28) & 0x01; /* S2GB - Short to ground phase B */
-    uint8_t  ola        = (status >> 29) & 0x01; /* OLA - Open load phase A */
-    uint8_t  olb        = (status >> 30) & 0x01; /* OLB - Open load phase B */
-    uint8_t  stst       = (status >> 31) & 0x01; /* STST - Standstill detected */
-
-    /* Build status string with register value */
-    offset += snprintf(status_str + offset,
-                       sizeof(status_str) - offset,
-                       "DRV_STATUS: 0x%08lX\n",
-                       (unsigned long)status);
-
-    /* StallGuard2 result */
-    offset += snprintf(status_str + offset,
-                       sizeof(status_str) - offset,
-                       "  SG_RESULT: %u (StallGuard2 result)\n",
-                       sg_result);
-
-    /* Full step active status */
-    offset += snprintf(status_str + offset,
-                       sizeof(status_str) - offset,
-                       "  FSACTIVE: %s\n",
-                       fsactive ? "YES" : "NO");
-
-    /* Actual motor current */
-    offset += snprintf(status_str + offset,
-                       sizeof(status_str) - offset,
-                       "  CS_ACTUAL: %u (Current scale)\n",
-                       cs_actual);
-
-    /* Stall detection status */
-    offset += snprintf(status_str + offset,
-                       sizeof(status_str) - offset,
-                       "  STALLGUARD: %s\n",
-                       stallguard ? "STALL DETECTED" : "OK");
-
-    /* Temperature warning status */
-    offset += snprintf(status_str + offset,
-                       sizeof(status_str) - offset,
-                       "  OT: %s\n",
-                       ot ? "OVERTEMP PREWARNING" : "OK");
-    offset += snprintf(status_str + offset,
-                       sizeof(status_str) - offset,
-                       "  OTPW: %s\n",
-                       otpw ? "OVERTEMP WARNING" : "OK");
-
-    /* Short circuit detection status */
-    offset += snprintf(status_str + offset,
-                       sizeof(status_str) - offset,
-                       "  S2GA: %s\n",
-                       s2ga ? "SHORT TO GND PHASE A" : "OK");
-    offset += snprintf(status_str + offset,
-                       sizeof(status_str) - offset,
-                       "  S2GB: %s\n",
-                       s2gb ? "SHORT TO GND PHASE B" : "OK");
-
-    /* Open load detection status */
-    offset += snprintf(status_str + offset,
-                       sizeof(status_str) - offset,
-                       "  OLA: %s\n",
-                       ola ? "OPEN LOAD PHASE A" : "OK");
-    offset += snprintf(status_str + offset,
-                       sizeof(status_str) - offset,
-                       "  OLB: %s\n",
-                       olb ? "OPEN LOAD PHASE B" : "OK");
-
-    /* Standstill detection status */
-    offset += snprintf(status_str + offset,
-                       sizeof(status_str) - offset,
-                       "  STST: %s\n",
-                       stst ? "STANDSTILL" : "MOVING");
-
-    /* Summary of critical issues */
-    if (stallguard || ot || otpw || s2ga || s2gb || ola || olb)
-    {
-        offset +=
-            snprintf(status_str + offset, sizeof(status_str) - offset, "\nCRITICAL ISSUES:\n");
-        if (stallguard)
-            offset +=
-                snprintf(status_str + offset, sizeof(status_str) - offset, "  - STALL DETECTED\n");
-        if (ot)
-            offset += snprintf(
-                status_str + offset, sizeof(status_str) - offset, "  - OVERTEMP PREWARNING\n");
-        if (otpw)
-            offset += snprintf(
-                status_str + offset, sizeof(status_str) - offset, "  - OVERTEMP WARNING\n");
-        if (s2ga)
-            offset += snprintf(
-                status_str + offset, sizeof(status_str) - offset, "  - SHORT TO GND PHASE A\n");
-        if (s2gb)
-            offset += snprintf(
-                status_str + offset, sizeof(status_str) - offset, "  - SHORT TO GND PHASE B\n");
-        if (ola)
-            offset += snprintf(
-                status_str + offset, sizeof(status_str) - offset, "  - OPEN LOAD PHASE A\n");
-        if (olb)
-            offset += snprintf(
-                status_str + offset, sizeof(status_str) - offset, "  - OPEN LOAD PHASE B\n");
-    }
-    else
-    {
-        offset += snprintf(
-            status_str + offset, sizeof(status_str) - offset, "\nSTATUS: All systems OK\n");
-    }
-
-    return status_str;
+    /* Set the driver enable state if the speed is high enough */
+    tmc_enable_driver((speed_rpm > 0.01f) || (speed_rpm < -0.01f));
 }
 
 /* ========================================================================== */
 /* SPEED RAMPING FUNCTIONS                                                    */
 /* ========================================================================== */
 
-/**
- * @brief Start speed ramping to target
- * @param target Target speed in RPM
- * @param ramp_rate_rpm_per_sec Ramp rate in RPM per second
- * @return TMC_OK on success, error code otherwise
- *
- * Initiates smooth speed ramping from current speed to target speed.
- * Uses linear interpolation to provide smooth acceleration/deceleration.
- * Handles direction changes automatically.
- */
+/* Start speed ramping to target */
 tmc_error_t tmc_start_ramp(const float target, const float ramp_rate_rpm_per_sec)
 {
     /* Validate ramp rate parameter */
@@ -974,29 +686,657 @@ tmc_error_t tmc_start_ramp(const float target, const float ramp_rate_rpm_per_sec
     }
 
     /* Initialize ramping state variables */
-    tmc_config.start_speed_rpm  = tmc_config.current_speed_rpm;
-    tmc_config.target_speed_rpm = target;
-    tmc_config.ramp_start_tick  = tmc_get_tick();
+    tmc_ramp.start_speed_rpm       = tmc_ramp.current_speed;
+    tmc_ramp.target_speed_rpm      = target;
+    tmc_ramp.ramp_start_tick       = tmc_get_tick();
+    tmc_ramp.ramp_rate_rpm_per_sec = ramp_rate_rpm_per_sec;
 
     /* Calculate ramping duration and end time */
-    const float ramp_period_s =
-        fabs((tmc_config.target_speed_rpm - tmc_config.start_speed_rpm) / ramp_rate_rpm_per_sec);
-    tmc_config.ramp_end_tick  = (uint32_t)(ramp_period_s * 1000.f) + tmc_config.ramp_start_tick;
-    tmc_config.ramping_active = true;
-    tmc_config.ramp_tick      = tmc_config.ramp_start_tick;
+    const double ramp_period_s =
+        fabs((tmc_ramp.target_speed_rpm - tmc_ramp.start_speed_rpm) / ramp_rate_rpm_per_sec);
+    tmc_ramp.ramp_end_tick  = (uint32_t)(ramp_period_s * 1000.f) + tmc_ramp.ramp_start_tick;
+    tmc_ramp.ramping_active = true;
+    tmc_ramp.ramp_tick      = tmc_ramp.ramp_start_tick;
 
     return TMC_OK;
 }
 
-/**
- * @brief Poll function for non-blocking speed ramping
- *
- * This function should be called regularly in the main loop to handle
- * speed ramping operations. It processes the ramping engine without
- * blocking the main execution thread.
- */
+/* Poll function for non-blocking speed ramping */
 void tmc_poll(void)
 {
     /* Process speed ramping engine */
     tmc_ramp_engine();
+}
+
+/* ========================================================================== */
+/* REGISTER-BASED CONFIGURATION FUNCTIONS                                     */
+/* ========================================================================== */
+
+/* Set standstill mode */
+tmc_error_t tmc_set_standstill_mode(tmc_standstill_mode_t mode)
+{
+    /* Read current PWMCONF register */
+    uint32_t    pwmconf = 0;
+    tmc_error_t error   = tmc_read_reg(tmc_node_address, TMC_REG_PWMCONF, &pwmconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Clear and set freewheel bits */
+    pwmconf &= ~(0x03 << 8);       /* Clear FREEWHEEL[1:0] */
+    pwmconf |= (mode & 0x03) << 8; /* Set FREEWHEEL[1:0] */
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_PWMCONF, pwmconf);
+}
+
+/* Enable automatic current scaling */
+tmc_error_t tmc_enable_automatic_current_scaling(void)
+{
+    /* Read current PWMCONF register */
+    uint32_t    pwmconf = 0;
+    tmc_error_t error   = tmc_read_reg(tmc_node_address, TMC_REG_PWMCONF, &pwmconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Set PWM_AUTOSCALE bit */
+    pwmconf |= (1 << 18);
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_PWMCONF, pwmconf);
+}
+
+/* Disable automatic current scaling */
+tmc_error_t tmc_disable_automatic_current_scaling(void)
+{
+    /* Read current PWMCONF register */
+    uint32_t    pwmconf = 0;
+    tmc_error_t error   = tmc_read_reg(tmc_node_address, TMC_REG_PWMCONF, &pwmconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Clear PWM_AUTOSCALE bit */
+    pwmconf &= ~(1 << 18);
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_PWMCONF, pwmconf);
+}
+
+/* Enable automatic gradient adaptation */
+tmc_error_t tmc_enable_automatic_gradient_adaptation(void)
+{
+    /* Read current PWMCONF register */
+    uint32_t    pwmconf = 0;
+    tmc_error_t error   = tmc_read_reg(tmc_node_address, TMC_REG_PWMCONF, &pwmconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Set PWM_AUTOGRAD bit */
+    pwmconf |= (1 << 19);
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_PWMCONF, pwmconf);
+}
+
+/* Disable automatic gradient adaptation */
+tmc_error_t tmc_disable_automatic_gradient_adaptation(void)
+{
+    /* Read current PWMCONF register */
+    uint32_t    pwmconf = 0;
+    tmc_error_t error   = tmc_read_reg(tmc_node_address, TMC_REG_PWMCONF, &pwmconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Clear PWM_AUTOGRAD bit */
+    pwmconf &= ~(1 << 19);
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_PWMCONF, pwmconf);
+}
+
+/* Set PWM offset */
+tmc_error_t tmc_set_pwm_offset(uint8_t pwm_amplitude)
+{
+    /* Read current PWMCONF register */
+    uint32_t    pwmconf = 0;
+    tmc_error_t error   = tmc_read_reg(tmc_node_address, TMC_REG_PWMCONF, &pwmconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Clear and set PWM_OFFSET bits */
+    pwmconf &= ~(0xFF << 0);                /* Clear PWM_OFFSET[7:0] */
+    pwmconf |= (pwm_amplitude & 0xFF) << 0; /* Set PWM_OFFSET[7:0] */
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_PWMCONF, pwmconf);
+}
+
+/* Set PWM gradient */
+tmc_error_t tmc_set_pwm_gradient(uint8_t pwm_amplitude)
+{
+    /* Read current PWMCONF register */
+    uint32_t    pwmconf = 0;
+    tmc_error_t error   = tmc_read_reg(tmc_node_address, TMC_REG_PWMCONF, &pwmconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Clear and set PWM_GRAD bits */
+    pwmconf &= ~(0xFF << 8);                /* Clear PWM_GRAD[7:0] */
+    pwmconf |= (pwm_amplitude & 0xFF) << 8; /* Set PWM_GRAD[7:0] */
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_PWMCONF, pwmconf);
+}
+
+/* Set power down delay */
+tmc_error_t tmc_set_power_down_delay(uint8_t power_down_delay)
+{
+    /* Validate parameter */
+    if (power_down_delay < 2)
+    {
+        return TMC_ERROR_INVALID_PARAM;
+    }
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_TPOWERDOWN, power_down_delay);
+}
+
+/* Set reply delay */
+tmc_error_t tmc_set_reply_delay(uint8_t delay)
+{
+    /* Validate parameter */
+    if (delay > 15)
+    {
+        return TMC_ERROR_INVALID_PARAM;
+    }
+
+    /* Read current REPLYDELAY register */
+    uint32_t    replydelay = 0;
+    tmc_error_t error      = tmc_read_reg(tmc_node_address, TMC_REG_REPLYDELAY, &replydelay);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Clear and set replydelay bits */
+    replydelay &= ~(0x0F << 8);        /* Clear replydelay[3:0] */
+    replydelay |= (delay & 0x0F) << 8; /* Set replydelay[3:0] */
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_REPLYDELAY, replydelay);
+}
+
+/* Move at velocity */
+tmc_error_t tmc_move_at_velocity(int32_t microsteps_per_period)
+{
+    return tmc_write_reg(tmc_node_address, TMC_REG_VACTUAL, (uint32_t)microsteps_per_period);
+}
+
+/* Move using step/dir interface */
+tmc_error_t tmc_move_using_step_dir_interface(void)
+{
+    return tmc_write_reg(tmc_node_address, TMC_REG_VACTUAL, 0);
+}
+
+/* Enable StealthChop */
+tmc_error_t tmc_enable_stealth_chop(void)
+{
+    /* Read current GCONF register */
+    uint32_t    gconf = 0;
+    tmc_error_t error = tmc_read_reg(tmc_node_address, TMC_REG_GCONF, &gconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Clear enable_spread_cycle bit */
+    gconf &= ~(1 << 2);
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_GCONF, gconf);
+}
+
+/* Disable StealthChop */
+tmc_error_t tmc_disable_stealth_chop(void)
+{
+    /* Read current GCONF register */
+    uint32_t    gconf = 0;
+    tmc_error_t error = tmc_read_reg(tmc_node_address, TMC_REG_GCONF, &gconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Set enable_spread_cycle bit */
+    gconf |= (1 << 2);
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_GCONF, gconf);
+}
+
+/* Set StealthChop duration threshold */
+tmc_error_t tmc_set_stealth_chop_duration_threshold(uint32_t duration_threshold)
+{
+    return tmc_write_reg(tmc_node_address, TMC_REG_TPWMTHRS, duration_threshold);
+}
+
+/* Set StallGuard threshold */
+tmc_error_t tmc_set_stall_guard_threshold(uint8_t stall_guard_threshold)
+{
+    return tmc_write_reg(tmc_node_address, TMC_REG_SGTHRS, stall_guard_threshold);
+}
+
+/* Enable CoolStep */
+tmc_error_t tmc_enable_cool_step(uint8_t lower_threshold, uint8_t upper_threshold)
+{
+    /* Validate parameters */
+    if (lower_threshold < 1 || lower_threshold > 15)
+    {
+        return TMC_ERROR_INVALID_PARAM;
+    }
+    if (upper_threshold > 15)
+    {
+        return TMC_ERROR_INVALID_PARAM;
+    }
+
+    /* Read current COOLCONF register */
+    uint32_t    coolconf = 0;
+    tmc_error_t error    = tmc_read_reg(tmc_node_address, TMC_REG_COOLCONF, &coolconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Set SEMIN and SEMAX bits */
+    coolconf &= ~(0x0F << 0);                  /* Clear SEMIN[3:0] */
+    coolconf |= (lower_threshold & 0x0F) << 0; /* Set SEMIN[3:0] */
+
+    coolconf &= ~(0x0F << 8);                  /* Clear SEMAX[3:0] */
+    coolconf |= (upper_threshold & 0x0F) << 8; /* Set SEMAX[3:0] */
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_COOLCONF, coolconf);
+}
+
+/* Disable CoolStep */
+tmc_error_t tmc_disable_cool_step(void)
+{
+    /* Read current COOLCONF register */
+    uint32_t    coolconf = 0;
+    tmc_error_t error    = tmc_read_reg(tmc_node_address, TMC_REG_COOLCONF, &coolconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Clear SEMIN bits to disable CoolStep */
+    coolconf &= ~(0x0F << 0); /* Clear SEMIN[3:0] */
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_COOLCONF, coolconf);
+}
+
+/* Set CoolStep current increment */
+tmc_error_t tmc_set_cool_step_current_increment(tmc_current_increment_t current_increment)
+{
+    /* Read current COOLCONF register */
+    uint32_t    coolconf = 0;
+    tmc_error_t error    = tmc_read_reg(tmc_node_address, TMC_REG_COOLCONF, &coolconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Clear and set SEUP bits */
+    coolconf &= ~(0x03 << 5);                    /* Clear SEUP[1:0] */
+    coolconf |= (current_increment & 0x03) << 5; /* Set SEUP[1:0] */
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_COOLCONF, coolconf);
+}
+
+/* Set CoolStep measurement count */
+tmc_error_t tmc_set_cool_step_measurement_count(tmc_measurement_count_t measurement_count)
+{
+    /* Read current COOLCONF register */
+    uint32_t    coolconf = 0;
+    tmc_error_t error    = tmc_read_reg(tmc_node_address, TMC_REG_COOLCONF, &coolconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Clear and set SEDN bits */
+    coolconf &= ~(0x03 << 12);                    /* Clear SEDN[1:0] */
+    coolconf |= (measurement_count & 0x03) << 12; /* Set SEDN[1:0] */
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_COOLCONF, coolconf);
+}
+
+/* Set CoolStep duration threshold */
+tmc_error_t tmc_set_cool_step_duration_threshold(uint32_t duration_threshold)
+{
+    return tmc_write_reg(tmc_node_address, TMC_REG_TCOOLTHRS, duration_threshold);
+}
+
+/* Enable analog current scaling */
+tmc_error_t tmc_enable_analog_current_scaling(void)
+{
+    /* Read current GCONF register */
+    uint32_t    gconf = 0;
+    tmc_error_t error = tmc_read_reg(tmc_node_address, TMC_REG_GCONF, &gconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Set i_scale_analog bit */
+    gconf |= (1 << 0);
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_GCONF, gconf);
+}
+
+/* Disable analog current scaling */
+tmc_error_t tmc_disable_analog_current_scaling(void)
+{
+    /* Read current GCONF register */
+    uint32_t    gconf = 0;
+    tmc_error_t error = tmc_read_reg(tmc_node_address, TMC_REG_GCONF, &gconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Clear i_scale_analog bit */
+    gconf &= ~(1 << 0);
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_GCONF, gconf);
+}
+
+/* Use external sense resistors */
+tmc_error_t tmc_use_external_sense_resistors(void)
+{
+    /* Read current GCONF register */
+    uint32_t    gconf = 0;
+    tmc_error_t error = tmc_read_reg(tmc_node_address, TMC_REG_GCONF, &gconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Clear internal_rsense bit */
+    gconf &= ~(1 << 1);
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_GCONF, gconf);
+}
+
+/* Use internal sense resistors */
+tmc_error_t tmc_use_internal_sense_resistors(void)
+{
+    /* Read current GCONF register */
+    uint32_t    gconf = 0;
+    tmc_error_t error = tmc_read_reg(tmc_node_address, TMC_REG_GCONF, &gconf);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Set internal_rsense bit */
+    gconf |= (1 << 1);
+
+    return tmc_write_reg(tmc_node_address, TMC_REG_GCONF, gconf);
+}
+
+/* ========================================================================== */
+/* STATUS AND MONITORING FUNCTIONS                                            */
+/* ========================================================================== */
+
+/* Get TMC2209 version */
+uint8_t tmc_get_version(void)
+{
+    uint32_t ioin = 0;
+    tmc_read_reg(tmc_node_address, TMC_REG_IOIN, &ioin);
+    return (uint8_t)((ioin >> 24) & 0xFF);
+}
+
+/* Check if driver is communicating */
+bool tmc_is_communicating(void) { return (tmc_get_version() == 0x21); }
+
+/* Check if driver is setup and communicating */
+bool tmc_is_setup_and_communicating(void)
+{
+    if (tmc_is_communicating() == false)
+    {
+        return false;
+    }
+
+    uint32_t gconf = 0;
+    if (tmc_read_reg(tmc_node_address, TMC_REG_GCONF, &gconf) != TMC_OK)
+    {
+        return false;
+    }
+
+    /* Check if pdn_disable bit is set (serial operation mode) */
+    return (gconf & (1 << 7)) != 0;
+}
+
+/* Check if driver is communicating but not setup */
+bool tmc_is_communicating_but_not_setup(void)
+{
+    return tmc_is_communicating() && !tmc_is_setup_and_communicating();
+}
+
+/* Check if driver is hardware disabled */
+bool tmc_hardware_disabled(void)
+{
+    uint32_t ioin = 0;
+    if (tmc_read_reg(tmc_node_address, TMC_REG_IOIN, &ioin) != TMC_OK)
+    {
+        return true;
+    }
+
+    /* Check ENN bit (bit 0) */
+    return (ioin & (1 << 0)) != 0;
+}
+
+/* Get microsteps per step */
+uint16_t tmc_get_microsteps_per_step(void)
+{
+    uint32_t chopconf = 0;
+    if (tmc_read_reg(tmc_node_address, TMC_REG_CHOPCONF, &chopconf) != TMC_OK)
+    {
+        return 0;
+    }
+
+    uint8_t mres = (chopconf >> 24) & 0x0F;
+    return 1 << (8 - mres);
+}
+
+/* Get current settings */
+tmc_error_t tmc_get_settings(tmc_settings_t *settings)
+{
+    if (settings == NULL)
+    {
+        return TMC_ERROR_INVALID_PARAM;
+    }
+
+    /* Initialize settings */
+    memset(settings, 0, sizeof(tmc_settings_t));
+
+    settings->is_communicating = tmc_is_communicating();
+    if (!settings->is_communicating)
+    {
+        return TMC_OK;
+    }
+
+    /* Read registers */
+    uint32_t    gconf = 0, chopconf = 0, pwmconf = 0, ihold_irun = 0;
+    tmc_error_t error;
+
+    error = tmc_read_reg(tmc_node_address, TMC_REG_GCONF, &gconf);
+    if (error != TMC_OK)
+        return error;
+
+    error = tmc_read_reg(tmc_node_address, TMC_REG_CHOPCONF, &chopconf);
+    if (error != TMC_OK)
+        return error;
+
+    error = tmc_read_reg(tmc_node_address, TMC_REG_PWMCONF, &pwmconf);
+    if (error != TMC_OK)
+        return error;
+
+    error = tmc_read_reg(tmc_node_address, TMC_REG_IHOLD_IRUN, &ihold_irun);
+    if (error != TMC_OK)
+        return error;
+
+    /* Parse settings */
+    settings->is_setup                              = (gconf & (1 << 7)) != 0;
+    settings->software_enabled                      = ((chopconf >> 0) & 0x0F) > 0;
+    settings->microsteps_per_step                   = tmc_get_microsteps_per_step();
+    settings->inverse_motor_direction_enabled       = (gconf & (1 << 3)) != 0;
+    settings->stealth_chop_enabled                  = (gconf & (1 << 2)) == 0;
+    settings->standstill_mode                       = (pwmconf >> 8) & 0x03;
+    settings->irun_register_value                   = (ihold_irun >> 8) & 0x1F;
+    settings->ihold_register_value                  = (ihold_irun >> 0) & 0x1F;
+    settings->iholddelay_register_value             = (ihold_irun >> 16) & 0x0F;
+    settings->automatic_current_scaling_enabled     = (pwmconf & (1 << 18)) != 0;
+    settings->automatic_gradient_adaptation_enabled = (pwmconf & (1 << 19)) != 0;
+    settings->pwm_offset                            = (pwmconf >> 0) & 0xFF;
+    settings->pwm_gradient                          = (pwmconf >> 8) & 0xFF;
+    settings->analog_current_scaling_enabled        = (gconf & (1 << 0)) != 0;
+    settings->internal_sense_resistors_enabled      = (gconf & (1 << 1)) != 0;
+
+    return TMC_OK;
+}
+
+/* Get driver status */
+tmc_error_t tmc_get_status(tmc_status_t *status)
+{
+    if (status == NULL)
+    {
+        return TMC_ERROR_INVALID_PARAM;
+    }
+
+    uint32_t    drv_status = 0;
+    tmc_error_t error      = tmc_read_reg(tmc_node_address, TMC_REG_DRV_STATUS, &drv_status);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* Parse status bits */
+    status->over_temperature_warning  = (drv_status >> 0) & 0x01;
+    status->over_temperature_shutdown = (drv_status >> 1) & 0x01;
+    status->short_to_ground_a         = (drv_status >> 2) & 0x01;
+    status->short_to_ground_b         = (drv_status >> 3) & 0x01;
+    status->low_side_short_a          = (drv_status >> 4) & 0x01;
+    status->low_side_short_b          = (drv_status >> 5) & 0x01;
+    status->open_load_a               = (drv_status >> 6) & 0x01;
+    status->open_load_b               = (drv_status >> 7) & 0x01;
+    status->over_temperature_120c     = (drv_status >> 8) & 0x01;
+    status->over_temperature_143c     = (drv_status >> 9) & 0x01;
+    status->over_temperature_150c     = (drv_status >> 10) & 0x01;
+    status->over_temperature_157c     = (drv_status >> 11) & 0x01;
+    status->reserved0                 = (drv_status >> 12) & 0x0F;
+    status->current_scaling           = (drv_status >> 16) & 0x1F;
+    status->reserved1                 = (drv_status >> 21) & 0x1FF;
+    status->stealth_chop_mode         = (drv_status >> 30) & 0x01;
+    status->standstill                = (drv_status >> 31) & 0x01;
+
+    return TMC_OK;
+}
+
+/* Get global status */
+tmc_error_t tmc_get_global_status(tmc_global_status_t *global_status)
+{
+    if (global_status == NULL)
+    {
+        return TMC_ERROR_INVALID_PARAM;
+    }
+
+    uint32_t    gstat = 0;
+    tmc_error_t error = tmc_read_reg(tmc_node_address, TMC_REG_GSTAT, &gstat);
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    global_status->reset    = (gstat >> 0) & 0x01;
+    global_status->drv_err  = (gstat >> 1) & 0x01;
+    global_status->uv_cp    = (gstat >> 2) & 0x01;
+    global_status->reserved = (gstat >> 3) & 0x1FFFFFFF;
+
+    return TMC_OK;
+}
+
+/* Clear reset flag */
+tmc_error_t tmc_clear_reset(void) { return tmc_write_reg(tmc_node_address, TMC_REG_GSTAT, 0x01); }
+
+/* Clear drive error flag */
+tmc_error_t tmc_clear_drive_error(void)
+{
+    return tmc_write_reg(tmc_node_address, TMC_REG_GSTAT, 0x02);
+}
+
+/* Get interface transmission counter */
+uint8_t tmc_get_interface_transmission_counter(void)
+{
+    uint32_t ifcnt = 0;
+    tmc_read_reg(tmc_node_address, TMC_REG_IFCNT, &ifcnt);
+    return (uint8_t)(ifcnt & 0xFF);
+}
+
+/* Get interstep duration */
+uint32_t tmc_get_interstep_duration(void)
+{
+    uint32_t tstep = 0;
+    tmc_read_reg(tmc_node_address, TMC_REG_TSTEP, &tstep);
+    return tstep;
+}
+
+/* Get StallGuard result */
+uint16_t tmc_get_stall_guard_result(void)
+{
+    uint32_t sg_result = 0;
+    tmc_read_reg(tmc_node_address, TMC_REG_SG_RESULT, &sg_result);
+    return (uint16_t)(sg_result & 0x3FF);
+}
+
+/* Get PWM scale sum */
+uint8_t tmc_get_pwm_scale_sum(void)
+{
+    uint32_t pwm_scale = 0;
+    tmc_read_reg(tmc_node_address, TMC_REG_PWM_SCALE, &pwm_scale);
+    return (uint8_t)(pwm_scale & 0xFF);
+}
+
+/* Get PWM scale auto */
+int16_t tmc_get_pwm_scale_auto(void)
+{
+    uint32_t pwm_scale = 0;
+    tmc_read_reg(tmc_node_address, TMC_REG_PWM_SCALE, &pwm_scale);
+    return (int16_t)((pwm_scale >> 16) & 0x1FF);
+}
+
+/* Get PWM offset auto */
+uint8_t tmc_get_pwm_offset_auto(void)
+{
+    uint32_t pwm_auto = 0;
+    tmc_read_reg(tmc_node_address, TMC_REG_PWM_AUTO, &pwm_auto);
+    return (uint8_t)(pwm_auto & 0xFF);
+}
+
+/* Get PWM gradient auto */
+uint8_t tmc_get_pwm_gradient_auto(void)
+{
+    uint32_t pwm_auto = 0;
+    tmc_read_reg(tmc_node_address, TMC_REG_PWM_AUTO, &pwm_auto);
+    return (uint8_t)((pwm_auto >> 16) & 0xFF);
+}
+
+/* Get microstep counter */
+uint16_t tmc_get_microstep_counter(void)
+{
+    uint32_t mscnt = 0;
+    tmc_read_reg(tmc_node_address, TMC_REG_MSCNT, &mscnt);
+    return (uint16_t)(mscnt & 0x3FF);
 }
