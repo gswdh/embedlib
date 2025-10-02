@@ -194,6 +194,9 @@ ar_error_t ar_init(const ar_reg_write_t *config, uint32_t len)
     // Enable colour gains
     ar_i2c_modify_reg(AR_REG_HDR_CONTROL, 0x0010, 0x0010);
 
+    // Set GPIO2 to new frame pulse
+    ar_set_pin_function(AR_PIN_GPIO2, AR_FUNC_NEW_FRAME_PULSE);
+
     return AR_OK;
 }
 
@@ -313,6 +316,169 @@ ar_error_t ar_set_shutter_time_s(const float time_s)
 }
 
 ar_error_t ar_set_resolution(const uint32_t x, const uint32_t y) { return AR_OK; }
+
+ar_error_t ar_set_pin_function(const ar_pin_t pin, const ar_function_t function)
+{
+    ar_error_t error;
+    uint16_t   gpio_control1 = 0U;
+    uint16_t   gpio_control2 = 0U;
+    uint16_t   gpio_select   = 0U;
+    uint16_t   pin_mask;
+    uint16_t   pin_shift;
+    uint16_t   function_value;
+    bool       is_input_function  = false;
+    bool       is_output_function = false;
+
+    /* Validate input parameters */
+    if ((pin >= AR_PIN_MAX) || (function >= AR_FUNC_MAX))
+    {
+        return AR_ERROR_INVALID_PARAM;
+    }
+
+    /* Determine if this is an input or output function */
+    if (function <= AR_FUNC_STANDBY)
+    {
+        is_input_function = true;
+    }
+    else
+    {
+        is_output_function = true;
+    }
+
+    /* Calculate pin-specific bit positions and masks */
+    pin_shift = (uint16_t)(pin * 4U);
+    pin_mask  = (uint16_t)(0x0FU << pin_shift);
+
+    /* Read current register values */
+    error = ar_read_reg(AR_REG_GPIO_CONTROL1, &gpio_control1);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    error = ar_read_reg(AR_REG_GPIO_CONTROL2, &gpio_control2);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    error = ar_read_reg(AR_REG_GPIO_SELECT, &gpio_select);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    /* Clear previous configuration for this pin */
+    gpio_control1 &= (uint16_t)~pin_mask;              /* Clear output enable */
+    gpio_control1 &= (uint16_t)~(pin_mask << 4U);      /* Clear input disable */
+    gpio_control2 &= (uint16_t)~(0x03U << (pin * 2U)); /* Clear input select */
+    gpio_select &= (uint16_t)~(0x0FU << pin_shift);    /* Clear output select */
+
+    if (is_input_function)
+    {
+        /* Configure as input function */
+        gpio_control1 |= (uint16_t)(1U << (pin + 4U)); /* Disable input buffer */
+        gpio_control1 &= (uint16_t)~(1U << pin);       /* Disable output driver */
+
+        /* Map function to input select value */
+        switch (function)
+        {
+        case AR_FUNC_NO_INPUT:
+            function_value = 0U;
+            break;
+        case AR_FUNC_OUTPUT_ENABLE_N:
+            function_value = 1U;
+            break;
+        case AR_FUNC_TRIGGER:
+            function_value = 2U;
+            break;
+        case AR_FUNC_STANDBY:
+            function_value = 3U;
+            break;
+        default:
+            return AR_ERROR_INVALID_PARAM;
+        }
+
+        /* Enable input buffer and set input select */
+        gpio_control1 &= (uint16_t)~(1U << (pin + 4U)); /* Enable input buffer */
+        gpio_control2 |= (uint16_t)(function_value << (pin * 2U));
+    }
+    else if (is_output_function)
+    {
+        /* Configure as output function */
+        gpio_control1 |= (uint16_t)(1U << (pin + 4U)); /* Disable input buffer */
+        gpio_control1 |= (uint16_t)(1U << pin);        /* Enable output driver */
+
+        /* Map function to output select value */
+        switch (function)
+        {
+        case AR_FUNC_BOOT_STATUS_0:
+            function_value = 0U;
+            break;
+        case AR_FUNC_BOOT_STATUS_1:
+            function_value = 1U;
+            break;
+        case AR_FUNC_BOOT_STATUS_2:
+            function_value = 2U;
+            break;
+        case AR_FUNC_SHUTTER_READOUT:
+            function_value = 3U;
+            break;
+        case AR_FUNC_FLASH:
+            function_value = 4U;
+            break;
+        case AR_FUNC_SHUTTER:
+            function_value = 5U;
+            break;
+        case AR_FUNC_LINE_VALID:
+            function_value = 6U;
+            break;
+        case AR_FUNC_FRAME_VALID:
+            function_value = 7U;
+            break;
+        case AR_FUNC_PIXCLK:
+            function_value = 8U;
+            break;
+        case AR_FUNC_MD_MOTION:
+            function_value = 9U;
+            break;
+        case AR_FUNC_MD_STOP:
+            function_value = 10U;
+            break;
+        case AR_FUNC_NEW_ROW_PULSE:
+            function_value = 11U;
+            break;
+        case AR_FUNC_NEW_FRAME_PULSE:
+            function_value = 12U;
+            break;
+        default:
+            return AR_ERROR_INVALID_PARAM;
+        }
+
+        gpio_select |= (uint16_t)(function_value << pin_shift);
+    }
+
+    /* Write updated register values */
+    error = ar_write_reg(AR_REG_GPIO_CONTROL1, gpio_control1);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    error = ar_write_reg(AR_REG_GPIO_CONTROL2, gpio_control2);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    error = ar_write_reg(AR_REG_GPIO_SELECT, gpio_select);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    return AR_OK;
+}
 
 char *ar_debug_gpio_state(const uint8_t gpio_state)
 {

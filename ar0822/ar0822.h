@@ -35,6 +35,42 @@ typedef enum
     AR_COLOUR_B,
 } ar_colour_t;
 
+/* GPIO Pin enumeration */
+typedef enum
+{
+    AR_PIN_GPIO0 = 0,
+    AR_PIN_GPIO1,
+    AR_PIN_GPIO2,
+    AR_PIN_GPIO3,
+    AR_PIN_MAX
+} ar_pin_t;
+
+/* GPIO Function enumeration */
+typedef enum
+{
+    /* Input functions */
+    AR_FUNC_NO_INPUT = 0,
+    AR_FUNC_OUTPUT_ENABLE_N,
+    AR_FUNC_TRIGGER,
+    AR_FUNC_STANDBY,
+
+    /* Output functions */
+    AR_FUNC_BOOT_STATUS_0,
+    AR_FUNC_BOOT_STATUS_1,
+    AR_FUNC_BOOT_STATUS_2,
+    AR_FUNC_SHUTTER_READOUT,
+    AR_FUNC_FLASH,
+    AR_FUNC_SHUTTER,
+    AR_FUNC_LINE_VALID,
+    AR_FUNC_FRAME_VALID,
+    AR_FUNC_PIXCLK,
+    AR_FUNC_MD_MOTION,
+    AR_FUNC_MD_STOP,
+    AR_FUNC_NEW_ROW_PULSE,
+    AR_FUNC_NEW_FRAME_PULSE,
+    AR_FUNC_MAX
+} ar_function_t;
+
 #define AR_I2C_DEV_ADDR (0x10)
 
 #define AR_INIT_SYNC_TO_MS (100U)
@@ -58,6 +94,11 @@ typedef enum
 #define AR_REG_GAIN_R  (0x305A)
 #define AR_REG_GAIN_G2 (0x305C)
 
+/* GPIO Control Registers */
+#define AR_REG_GPIO_CONTROL1 (0x340A)
+#define AR_REG_GPIO_CONTROL2 (0x340C)
+#define AR_REG_GPIO_SELECT   (0x340E)
+
 // Interface functions
 void       ar_set_nrst(const bool en);
 void       ar_set_xshutdown(const bool en);
@@ -79,6 +120,7 @@ ar_error_t ar_set_colour_gain(const float gain, const ar_colour_t c);
 ar_error_t ar_get_shutter_time_s(float *time_s);
 ar_error_t ar_set_shutter_time_s(const float time_s);
 ar_error_t ar_set_resolution(const uint32_t x, const uint32_t y);
+ar_error_t ar_set_pin_function(const ar_pin_t pin, const ar_function_t function);
 
 // Debugging
 char *ar_debug_gpio_state(const uint8_t gpio_state);
