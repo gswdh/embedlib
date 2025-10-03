@@ -2,6 +2,11 @@
 
 #include <assert.h>
 #include <math.h>
+#include <stddef.h>
+
+/* Cached row time in nanoseconds - calculated once during initialization */
+static uint32_t g_cached_row_time_ns = 0U;
+static bool     g_row_time_cached    = false;
 
 void __attribute__((weak)) ar_set_nrst(const bool en)
 {
@@ -49,6 +54,32 @@ uint32_t __attribute__((weak)) ar_tick_ms(void)
 }
 
 static uint16_t reverse_endian(uint16_t value) { return (value << 8) | (value >> 8); }
+
+/* Get cached row time or calculate it if not cached */
+static ar_error_t ar_get_cached_row_time_ns(uint32_t *time_ns)
+{
+    if (time_ns == NULL)
+    {
+        return AR_ERROR_INVALID_PARAM;
+    }
+
+    if (g_row_time_cached)
+    {
+        *time_ns = g_cached_row_time_ns;
+        return AR_OK;
+    }
+    else
+    {
+        /* Fallback to calculation if not cached and cache the result */
+        ar_error_t error = ar_get_row_time_ns(time_ns);
+        if (error == AR_OK)
+        {
+            g_cached_row_time_ns = *time_ns;
+            g_row_time_cached    = true;
+        }
+        return error;
+    }
+}
 
 static ar_error_t ar_read_reg(const uint16_t reg, uint16_t *const value)
 {
@@ -191,11 +222,12 @@ ar_error_t ar_init(const ar_reg_write_t *config, uint32_t len)
         return error;
     }
 
-    // Enable colour gains
-    ar_i2c_modify_reg(AR_REG_HDR_CONTROL, 0x0010, 0x0010);
-
-    // Set GPIO2 to new frame pulse
-    ar_set_pin_function(AR_PIN_GPIO2, AR_FUNC_NEW_FRAME_PULSE);
+    // Cache the row time after successful initialization
+    error = ar_get_cached_row_time_ns(&g_cached_row_time_ns);
+    if (error != AR_OK)
+    {
+        return error;
+    }
 
     return AR_OK;
 }
@@ -292,20 +324,43 @@ ar_error_t ar_set_colour_gain(const float gain, const ar_colour_t colour)
 
 ar_error_t ar_get_shutter_time_s(float *time_s)
 {
-    uint16_t reg_value = 0;
+    uint16_t reg_value   = 0;
+    uint32_t row_time_ns = 0;
+
     if (ar_read_reg(AR_REG_COARSE_INT, &reg_value) != AR_OK)
     {
         return AR_ERROR_I2C_FAIL;
     }
 
-    *time_s = ((float)(reg_value)) * AR_ROW_TIME_S;
+    /* Get the cached row time */
+    ar_error_t error = ar_get_cached_row_time_ns(&row_time_ns);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    /* Convert nanoseconds to seconds and multiply by number of rows */
+    *time_s = ((float)(reg_value)) * ((float)row_time_ns) / 1000000000.0f;
 
     return AR_OK;
 }
 
 ar_error_t ar_set_shutter_time_s(const float time_s)
 {
-    const uint16_t reg_value = (uint16_t)(time_s / AR_ROW_TIME_S);
+    uint32_t row_time_ns = 0;
+
+    /* Get the cached row time */
+    ar_error_t error = ar_get_cached_row_time_ns(&row_time_ns);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    /* Convert row time from nanoseconds to seconds */
+    const float row_time_s = (float)row_time_ns / 1000000000.0f;
+
+    /* Calculate number of rows needed for the desired shutter time */
+    const uint16_t reg_value = (uint16_t)(time_s / row_time_s);
 
     if (ar_write_reg(AR_REG_COARSE_INT, reg_value) != AR_OK)
     {
@@ -512,4 +567,93 @@ char *ar_debug_gpio_state(const uint8_t gpio_state)
         return "";
         break;
     }
+}
+
+ar_error_t ar_get_row_time_ns(uint32_t *time_ns)
+{
+    /* Input validation */
+    if (time_ns == NULL)
+    {
+        return AR_ERROR_INVALID_PARAM;
+    }
+
+    /* Constants for calculation */
+    const uint64_t EXTCLK_HZ              = 19200000ULL; /* 19.2 MHz external clock */
+    const uint64_t NANOSECONDS_PER_SECOND = 1000000000ULL;
+
+    /* Register values */
+    uint16_t line_length_pck = 0U;
+    uint16_t pre_pll_clk_div = 0U;
+    uint16_t pll_multiplier  = 0U;
+    uint16_t vt_sys_clk_div  = 0U;
+    uint16_t vt_pix_clk_div  = 0U;
+
+    /* Read all required registers */
+    ar_error_t error = ar_read_reg(AR_REG_LINE_LENGTH_PCK, &line_length_pck);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    error = ar_read_reg(AR_REG_PRE_PLL_CLK_DIV, &pre_pll_clk_div);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    error = ar_read_reg(AR_REG_PLL_MULTIPLIER, &pll_multiplier);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    error = ar_read_reg(AR_REG_VT_SYS_CLK_DIV, &vt_sys_clk_div);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    error = ar_read_reg(AR_REG_VT_PIX_CLK_DIV, &vt_pix_clk_div);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    /* Check for divide-by-zero conditions */
+    if ((pre_pll_clk_div == 0U) || (vt_sys_clk_div == 0U) || (vt_pix_clk_div == 0U))
+    {
+        return AR_ERROR_INVALID_PARAM;
+    }
+
+    /* Calculate CLK_PIX using 64-bit arithmetic to avoid overflow */
+    /* CLK_PIX = (EXTCLK * pll_multiplier) / (pre_pll_clk_div * vt_sys_clk_div * vt_pix_clk_div) */
+    const uint64_t numerator = EXTCLK_HZ * (uint64_t)pll_multiplier;
+    const uint64_t denominator =
+        (uint64_t)pre_pll_clk_div * (uint64_t)vt_sys_clk_div * (uint64_t)vt_pix_clk_div;
+
+    if (denominator == 0ULL)
+    {
+        return AR_ERROR_INVALID_PARAM;
+    }
+
+    const uint64_t clk_pix_hz = numerator / denominator;
+
+    /* Calculate row time in seconds: T_ROW = line_length_pck / CLK_PIX */
+    if (clk_pix_hz == 0ULL)
+    {
+        return AR_ERROR_INVALID_PARAM;
+    }
+
+    const uint64_t row_time_s_numerator = (uint64_t)line_length_pck * NANOSECONDS_PER_SECOND;
+    const uint64_t row_time_ns          = row_time_s_numerator / clk_pix_hz;
+
+    /* Check for overflow in the final result */
+    if (row_time_ns > UINT32_MAX)
+    {
+        return AR_ERROR_INVALID_PARAM;
+    }
+
+    *time_ns = (uint32_t)row_time_ns;
+
+    return AR_OK;
 }

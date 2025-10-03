@@ -75,8 +75,6 @@ typedef enum
 
 #define AR_INIT_SYNC_TO_MS (100U)
 
-#define AR_ROW_TIME_S (0.000014524)
-
 #define AR_REG_GLOBAL_GAIN_MAX  (0x77)
 #define AR_REG_GLOBAL_GAIN_STEP (0.375)
 
@@ -98,6 +96,13 @@ typedef enum
 #define AR_REG_GPIO_CONTROL1 (0x340A)
 #define AR_REG_GPIO_CONTROL2 (0x340C)
 #define AR_REG_GPIO_SELECT   (0x340E)
+
+/* Clock and timing registers for row time calculation */
+#define AR_REG_LINE_LENGTH_PCK (0x300C)
+#define AR_REG_VT_PIX_CLK_DIV  (0x302A)
+#define AR_REG_VT_SYS_CLK_DIV  (0x302C)
+#define AR_REG_PRE_PLL_CLK_DIV (0x302E)
+#define AR_REG_PLL_MULTIPLIER  (0x3030)
 
 // Interface functions
 void       ar_set_nrst(const bool en);
@@ -121,6 +126,7 @@ ar_error_t ar_get_shutter_time_s(float *time_s);
 ar_error_t ar_set_shutter_time_s(const float time_s);
 ar_error_t ar_set_resolution(const uint32_t x, const uint32_t y);
 ar_error_t ar_set_pin_function(const ar_pin_t pin, const ar_function_t function);
+ar_error_t ar_get_row_time_ns(uint32_t *time_ns);
 
 // Debugging
 char *ar_debug_gpio_state(const uint8_t gpio_state);
