@@ -1,0 +1,9 @@
+# W25Q128JV library
+add_library(w25q128jv STATIC
+    w25q128jv.c
+)
+
+# Include directories
+target_include_directories(w25q128jv PUBLIC
+    .
+)
