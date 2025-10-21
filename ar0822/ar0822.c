@@ -83,7 +83,7 @@ static ar_error_t ar_get_cached_row_time_ns(uint32_t *time_ns)
 
 static ar_error_t ar_read_reg(const uint16_t reg, uint16_t *const value)
 {
-    ar_error_t error = ar_i2c_read(reg, (uint8_t *)value, sizeof(value));
+    ar_error_t error = ar_i2c_read(reg, (uint8_t *)value, sizeof(uint16_t));
     if (error != AR_OK)
     {
         return error;
@@ -101,7 +101,7 @@ static ar_error_t ar_write_reg(const uint16_t reg, uint16_t value)
     value = reverse_endian(value);
 
     // Write back to the device
-    ar_error_t error = ar_i2c_write(reg, (uint8_t *)&value, sizeof(value));
+    ar_error_t error = ar_i2c_write(reg, (uint8_t *)&value, sizeof(uint16_t));
     if (error != AR_OK)
     {
         return error;
@@ -213,7 +213,7 @@ ar_error_t ar_init(const ar_reg_write_t *config, uint32_t len)
     ar_set_nrst(true);
 
     // Wait to settle (at least 1600000 clock cycles)
-    ar_delay_ms(1000);
+    ar_delay_ms(10U);
 
     //  Set the register values
     ar_error_t error = ar_reg_init(config, len);
