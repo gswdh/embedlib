@@ -7,27 +7,9 @@
 #include "stm32boot.h"
 #include <string.h>
 
-/* Internal helper functions - forward declarations */
-static stm32bl_status_t read_status(bool allow_busy, uint32_t timeout_ms);
-static uint8_t          xor_sum(const uint8_t *buf, uint16_t len);
-static stm32bl_status_t send_addr4(uint32_t addr);
-static stm32bl_status_t write_frame(const uint8_t *buf, uint16_t len);
-static stm32bl_status_t read_frame(uint8_t *buf, uint16_t len);
-
-/* Send command with proper framing: [cmd, ~cmd] */
-static stm32bl_status_t send_cmd(uint8_t opcode)
-{
-    uint8_t          frame[2] = {opcode, (uint8_t)(~opcode)};
-    stm32bl_status_t result =
-        stm32bl_i2c_write(STM32BL_DEFAULT_I2C_ADDR, frame, 2, STM32BL_DEFAULT_INTERFRAME_TIMEOUT);
-    if (result != STM32BL_OK)
-    {
-        return result;
-    }
-
-    /* Read status response */
-    return read_status(false, STM32BL_DEFAULT_INTERFRAME_TIMEOUT);
-}
+#ifdef STM32
+#include "stm32g0xx_hal.h"
+#endif
 
 /* Read status byte with BUSY polling support */
 static stm32bl_status_t read_status(bool allow_busy, uint32_t timeout_ms)
@@ -68,6 +50,21 @@ static stm32bl_status_t read_status(bool allow_busy, uint32_t timeout_ms)
     }
 
     return STM32BL_ERR_BUSY_TIMEOUT;
+}
+
+/* Send command with proper framing: [cmd, ~cmd] */
+static stm32bl_status_t send_cmd(uint8_t opcode)
+{
+    uint8_t          frame[2] = {opcode, (uint8_t)(~opcode)};
+    stm32bl_status_t result =
+        stm32bl_i2c_write(STM32BL_DEFAULT_I2C_ADDR, frame, 2, STM32BL_DEFAULT_INTERFRAME_TIMEOUT);
+    if (result != STM32BL_OK)
+    {
+        return result;
+    }
+
+    /* Read status response */
+    return read_status(false, STM32BL_DEFAULT_INTERFRAME_TIMEOUT);
 }
 
 /* Calculate XOR checksum of buffer */
@@ -125,6 +122,28 @@ static stm32bl_status_t read_frame(uint8_t *buf, uint16_t len)
 }
 
 /* Public API Implementation */
+stm32bl_status_t stm32bl_enable_bootloader(void)
+{
+#ifdef STM32
+    FLASH_OBProgramInitTypeDef option_bytes = {0};
+    option_bytes.WRPArea                    = OB_WRPAREA_ZONE_A;
+
+    HAL_FLASH_Unlock();
+    HAL_FLASH_OB_Unlock();
+
+    HAL_FLASHEx_OBGetConfig(&option_bytes);
+
+    // Modify only what you need (for example, set nBOOT_SEL and BOOT0)
+    option_bytes.USERConfig &= ~FLASH_OPTR_nBOOT_SEL;
+    HAL_FLASHEx_OBProgram(&option_bytes);
+
+    HAL_FLASH_OB_Launch();
+
+    return STM32BL_OK;
+#else
+    return STM32BL_ERR_INVALID;
+#endif
+}
 
 stm32bl_status_t stm32bl_enter_bootloader(uint8_t boot0_pin, uint8_t reset_pin)
 {
@@ -461,6 +480,16 @@ const char *stm32bl_get_error_string(stm32bl_status_t status)
         return "Busy timeout";
     case STM32BL_ERR_VERIFY:
         return "Verification failed";
+    case STM32BL_ERR_FLASH_UNLOCK:
+        return "Flash unlock failed";
+    case STM32BL_ERR_OB_UNLOCK:
+        return "Option bytes unlock failed";
+    case STM32BL_ERR_OB_GET_CONFIG:
+        return "Get option bytes configuration failed";
+    case STM32BL_ERR_OB_PROGRAM:
+        return "Program option bytes failed";
+    case STM32BL_ERR_OB_LAUNCH:
+        return "Launch option bytes reload failed";
     default:
         return "Unknown error";
     }
