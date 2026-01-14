@@ -67,7 +67,7 @@ extern "C"
 
 /* Default I²C address for STM32G0 bootloader (from AN2606) */
 #ifndef STM32BL_DEFAULT_I2C_ADDR
-#define STM32BL_DEFAULT_I2C_ADDR (0xACu)
+#define STM32BL_DEFAULT_I2C_ADDR (0x56u)
 #endif
 
 /* Default timeouts (ms) */
@@ -78,7 +78,7 @@ extern "C"
 #define STM32BL_DEFAULT_BUSY_POLL_INTERVAL (5u)
 #endif
 #ifndef STM32BL_DEFAULT_BUSY_POLL_TIMEOUT
-#define STM32BL_DEFAULT_BUSY_POLL_TIMEOUT (5000u)
+#define STM32BL_DEFAULT_BUSY_POLL_TIMEOUT (500u)
 #endif
 
 /* Maximum data length per write command */
@@ -91,6 +91,7 @@ extern "C"
     typedef enum
     {
         STM32BL_OK = 0,
+        STM32BL_ERR_BUSY,
         STM32BL_ERR_INVALID_PARAM,
         STM32BL_ERR_COMM,
         STM32BL_ERR_TIMEOUT,
@@ -127,6 +128,12 @@ extern "C"
      * @return Status code (MISRA Rule 17.7: return value must be used)
      */
     stm32bl_status_t stm32bl_i2c_read(uint8_t addr, uint8_t *buf, uint16_t len, uint32_t to_ms);
+
+    /**
+     * @brief Get system tick count
+     * @return System tick count
+     */
+    uint32_t stm32bl_get_tick(void);
 
     /**
      * @brief Delay execution for specified time
@@ -198,7 +205,7 @@ extern "C"
      * @param nostretch No-stretch mode flag (MISRA Rule 14.4: boolean type)
      * @return Status code (MISRA Rule 17.7: return value must be used)
      */
-    stm32bl_status_t stm32bl_erase_mass(bool nostretch);
+    stm32bl_status_t stm32bl_erase_mass(void);
 
     /**
      * @brief Jump to specified address
