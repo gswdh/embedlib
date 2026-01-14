@@ -7,21 +7,22 @@
 #include "stm32boot.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #ifdef STM32
 #include "stm32g0xx_hal.h"
 #endif
 
 /* Calculate XOR checksum of buffer */
-// static uint8_t xor_sum(const uint8_t *buf, uint16_t len)
-// {
-//     uint8_t checksum = 0;
-//     for (uint16_t i = 0; i < len; i++)
-//     {
-//         checksum ^= buf[i];
-//     }
-//     return checksum;
-// }
+static uint8_t xor_sum(const uint8_t *buf, uint16_t len)
+{
+    uint8_t checksum = 0;
+    for (uint16_t i = 0; i < len; i++)
+    {
+        checksum ^= buf[i];
+    }
+    return checksum;
+}
 
 static stm32bl_status_t stm32bl_write_bytes(const uint8_t *buf, const uint16_t len)
 {
@@ -80,9 +81,9 @@ static stm32bl_status_t stm32bl_get_ack(void)
 static stm32bl_status_t stm32bl_poll_for_ack(const uint32_t timeout_ms)
 {
     const uint32_t start_time = stm32bl_get_tick();
-    while (stm32bl_get_tick() - start_time < timeout_ms)
+    while ((stm32bl_get_tick() - start_time) < timeout_ms)
     {
-        stm32bl_status_t result = stm32bl_get_ack();
+        const stm32bl_status_t result = stm32bl_get_ack();
         if (result == STM32BL_OK)
         {
             return STM32BL_OK;
@@ -104,6 +105,40 @@ static stm32bl_status_t stm32bl_send_mass_erase_special(void)
     /* The special byte values for mass erase are 0xFF, 0xFF and 0x00 is the XOR sum of the previous
      * two bytes */
     return stm32bl_write_bytes((uint8_t[]){0xFF, 0xFF, 0x00}, 3);
+}
+
+static stm32bl_status_t stm32bl_send_address(const uint32_t addr)
+{
+    /* The first output byte is the most significant byte of the address */
+    uint8_t write_buf[5] = {0};
+    write_buf[0]         = (uint8_t)(addr >> 24);
+    write_buf[1]         = (uint8_t)(addr >> 16);
+    write_buf[2]         = (uint8_t)(addr >> 8);
+    write_buf[3]         = (uint8_t)(addr);
+    write_buf[4]         = (uint8_t)xor_sum(write_buf, 4);
+
+    return stm32bl_write_bytes(write_buf, 5);
+}
+
+static stm32bl_status_t stm32bl_send_frame_data(const uint8_t *data, const uint16_t len)
+{
+    if (len == 0 || len > 256)
+    {
+        return STM32BL_ERR_INVALID_PARAM;
+    }
+
+    if (data == NULL)
+    {
+        return STM32BL_ERR_INVALID_PARAM;
+    }
+
+    /* The send frame is len + 2 where the first byte is the (len -1 bytes), the bytes then the xor
+     * of the frame */
+    uint8_t write_buf[len + 2];
+    write_buf[0] = (uint8_t)(len - 1);
+    memcpy(&write_buf[1], data, len);
+    write_buf[len + 1] = (uint8_t)xor_sum(write_buf, len + 1);
+    return stm32bl_write_bytes(write_buf, len + 2);
 }
 
 /* Public API Implementation */
@@ -232,15 +267,7 @@ stm32bl_status_t stm32bl_get_id(uint16_t *pid)
     return STM32BL_OK;
 }
 
-stm32bl_status_t stm32bl_erase_pages(const uint16_t *pages, uint16_t count, bool nostretch)
-{
-    (void)pages;
-    (void)count;
-    (void)nostretch;
-    return STM32BL_ERR_COMM;
-}
-
-stm32bl_status_t stm32bl_erase_mass(void)
+stm32bl_status_t stm32bl_mass_erase(void)
 {
     stm32bl_status_t result = STM32BL_OK;
 
@@ -250,7 +277,7 @@ stm32bl_status_t stm32bl_erase_mass(void)
         return result;
     }
 
-    result = stm32bl_get_ack();
+    result = stm32bl_poll_for_ack(STM32BL_DEFAULT_BUSY_POLL_TIMEOUT);
     if (result != STM32BL_OK)
     {
         return result;
@@ -261,6 +288,68 @@ stm32bl_status_t stm32bl_erase_mass(void)
     {
         return result;
     }
+
+    /* Wait for the mass erase to complete */
+    stm32bl_delay(50U);
+
+    result = stm32bl_poll_for_ack(STM32BL_DEFAULT_BUSY_POLL_TIMEOUT);
+    if (result != STM32BL_OK)
+    {
+        return result;
+    }
+
+    return STM32BL_OK;
+}
+
+stm32bl_status_t stm32bl_write(const uint32_t addr, const uint8_t *src, const uint16_t len)
+{
+    if ((len == 0) || (len > 256))
+    {
+        return STM32BL_ERR_INVALID_PARAM;
+    }
+
+    if (src == NULL)
+    {
+        return STM32BL_ERR_INVALID_PARAM;
+    }
+
+    stm32bl_status_t result = STM32BL_OK;
+
+    result = stm32bl_send_cmd(STM32BL_CMD_WRITE_MEMORY);
+    if (result != STM32BL_OK)
+    {
+        return result;
+    }
+
+    stm32bl_delay(STM32BL_DEFAULT_BUSY_POLL_INTERVAL);
+
+    result = stm32bl_poll_for_ack(STM32BL_DEFAULT_BUSY_POLL_TIMEOUT);
+    if (result != STM32BL_OK)
+    {
+        return result;
+    }
+
+    result = stm32bl_send_address(addr);
+    if (result != STM32BL_OK)
+    {
+        return result;
+    }
+
+    stm32bl_delay(STM32BL_DEFAULT_BUSY_POLL_INTERVAL);
+
+    result = stm32bl_poll_for_ack(STM32BL_DEFAULT_BUSY_POLL_TIMEOUT);
+    if (result != STM32BL_OK)
+    {
+        return result;
+    }
+
+    result = stm32bl_send_frame_data(src, len);
+    if (result != STM32BL_OK)
+    {
+        return result;
+    }
+
+    stm32bl_delay(STM32BL_DEFAULT_BUSY_POLL_INTERVAL);
 
     result = stm32bl_poll_for_ack(STM32BL_DEFAULT_BUSY_POLL_TIMEOUT);
     if (result != STM32BL_OK)

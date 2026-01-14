@@ -182,6 +182,13 @@ extern "C"
     stm32bl_status_t stm32bl_read(uint32_t addr, uint8_t *dst, uint16_t len);
 
     /**
+     * @brief Erase entire flash memory
+     * @param nostretch No-stretch mode flag (MISRA Rule 14.4: boolean type)
+     * @return Status code (MISRA Rule 17.7: return value must be used)
+     */
+    stm32bl_status_t stm32bl_mass_erase(void);
+
+    /**
      * @brief Write memory to device
      * @param addr Memory address (MISRA Rule 10.3: explicit conversion)
      * @param src Pointer to source buffer (MISRA Rule 11.8: const preserved)
@@ -189,23 +196,7 @@ extern "C"
      * @param nostretch No-stretch mode flag (MISRA Rule 14.4: boolean type)
      * @return Status code (MISRA Rule 17.7: return value must be used)
      */
-    stm32bl_status_t stm32bl_write(uint32_t addr, const uint8_t *src, uint16_t len, bool nostretch);
-
-    /**
-     * @brief Erase specific flash pages
-     * @param pages Pointer to page numbers array (MISRA Rule 11.8: const preserved)
-     * @param count Number of pages to erase (MISRA Rule 10.3: explicit conversion)
-     * @param nostretch No-stretch mode flag (MISRA Rule 14.4: boolean type)
-     * @return Status code (MISRA Rule 17.7: return value must be used)
-     */
-    stm32bl_status_t stm32bl_erase_pages(const uint16_t *pages, uint16_t count, bool nostretch);
-
-    /**
-     * @brief Erase entire flash memory
-     * @param nostretch No-stretch mode flag (MISRA Rule 14.4: boolean type)
-     * @return Status code (MISRA Rule 17.7: return value must be used)
-     */
-    stm32bl_status_t stm32bl_erase_mass(void);
+    stm32bl_status_t stm32bl_write(uint32_t addr, const uint8_t *src, uint16_t len);
 
     /**
      * @brief Jump to specified address
