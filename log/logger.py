@@ -1,7 +1,6 @@
 import serial
 import click
 import os
-from multiprocessing import Process
 import multiprocessing as mp
 import json
 
