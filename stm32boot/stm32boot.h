@@ -214,6 +214,14 @@ extern "C"
     stm32bl_status_t stm32bl_enter_bootloader(uint8_t boot0_pin, uint8_t reset_pin);
 
     /**
+     * @brief Exit bootloader mode via GPIO control
+     * @param boot0_pin BOOT0 pin number (MISRA Rule 10.3: explicit conversion)
+     * @param reset_pin Reset pin number (MISRA Rule 10.3: explicit conversion)
+     * @return Status code (MISRA Rule 17.7: return value must be used)
+     */
+    stm32bl_status_t stm32bl_exit_bootloader(uint8_t boot0_pin, uint8_t reset_pin);
+
+    /**
      * @brief Enable bootloader via option bytes configuration
      * @note This function configures STM32 option bytes to enable bootloader access.
      *       The MCU will reset after successful configuration (MISRA Rule 15.3: no goto used).
