@@ -67,7 +67,7 @@ extern "C"
 
 /* Default I²C address for STM32G0 bootloader (from AN2606) */
 #ifndef STM32BL_DEFAULT_I2C_ADDR
-#define STM32BL_DEFAULT_I2C_ADDR (0xACu)
+#define STM32BL_DEFAULT_I2C_ADDR (0x56u)
 #endif
 
 /* Default timeouts (ms) */
@@ -78,7 +78,7 @@ extern "C"
 #define STM32BL_DEFAULT_BUSY_POLL_INTERVAL (5u)
 #endif
 #ifndef STM32BL_DEFAULT_BUSY_POLL_TIMEOUT
-#define STM32BL_DEFAULT_BUSY_POLL_TIMEOUT (5000u)
+#define STM32BL_DEFAULT_BUSY_POLL_TIMEOUT (500u)
 #endif
 
 /* Maximum data length per write command */
@@ -91,6 +91,7 @@ extern "C"
     typedef enum
     {
         STM32BL_OK = 0,
+        STM32BL_ERR_BUSY,
         STM32BL_ERR_INVALID_PARAM,
         STM32BL_ERR_COMM,
         STM32BL_ERR_TIMEOUT,
@@ -127,6 +128,12 @@ extern "C"
      * @return Status code (MISRA Rule 17.7: return value must be used)
      */
     stm32bl_status_t stm32bl_i2c_read(uint8_t addr, uint8_t *buf, uint16_t len, uint32_t to_ms);
+
+    /**
+     * @brief Get system tick count
+     * @return System tick count
+     */
+    uint32_t stm32bl_get_tick(void);
 
     /**
      * @brief Delay execution for specified time
@@ -175,6 +182,13 @@ extern "C"
     stm32bl_status_t stm32bl_read(uint32_t addr, uint8_t *dst, uint16_t len);
 
     /**
+     * @brief Erase entire flash memory
+     * @param nostretch No-stretch mode flag (MISRA Rule 14.4: boolean type)
+     * @return Status code (MISRA Rule 17.7: return value must be used)
+     */
+    stm32bl_status_t stm32bl_mass_erase(void);
+
+    /**
      * @brief Write memory to device
      * @param addr Memory address (MISRA Rule 10.3: explicit conversion)
      * @param src Pointer to source buffer (MISRA Rule 11.8: const preserved)
@@ -182,23 +196,7 @@ extern "C"
      * @param nostretch No-stretch mode flag (MISRA Rule 14.4: boolean type)
      * @return Status code (MISRA Rule 17.7: return value must be used)
      */
-    stm32bl_status_t stm32bl_write(uint32_t addr, const uint8_t *src, uint16_t len, bool nostretch);
-
-    /**
-     * @brief Erase specific flash pages
-     * @param pages Pointer to page numbers array (MISRA Rule 11.8: const preserved)
-     * @param count Number of pages to erase (MISRA Rule 10.3: explicit conversion)
-     * @param nostretch No-stretch mode flag (MISRA Rule 14.4: boolean type)
-     * @return Status code (MISRA Rule 17.7: return value must be used)
-     */
-    stm32bl_status_t stm32bl_erase_pages(const uint16_t *pages, uint16_t count, bool nostretch);
-
-    /**
-     * @brief Erase entire flash memory
-     * @param nostretch No-stretch mode flag (MISRA Rule 14.4: boolean type)
-     * @return Status code (MISRA Rule 17.7: return value must be used)
-     */
-    stm32bl_status_t stm32bl_erase_mass(bool nostretch);
+    stm32bl_status_t stm32bl_write(uint32_t addr, const uint8_t *src, uint16_t len);
 
     /**
      * @brief Jump to specified address
@@ -214,6 +212,14 @@ extern "C"
      * @return Status code (MISRA Rule 17.7: return value must be used)
      */
     stm32bl_status_t stm32bl_enter_bootloader(uint8_t boot0_pin, uint8_t reset_pin);
+
+    /**
+     * @brief Exit bootloader mode via GPIO control
+     * @param boot0_pin BOOT0 pin number (MISRA Rule 10.3: explicit conversion)
+     * @param reset_pin Reset pin number (MISRA Rule 10.3: explicit conversion)
+     * @return Status code (MISRA Rule 17.7: return value must be used)
+     */
+    stm32bl_status_t stm32bl_exit_bootloader(uint8_t boot0_pin, uint8_t reset_pin);
 
     /**
      * @brief Enable bootloader via option bytes configuration
