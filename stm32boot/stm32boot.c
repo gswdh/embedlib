@@ -171,9 +171,9 @@ stm32bl_status_t stm32bl_enter_bootloader(uint8_t boot0_pin, uint8_t reset_pin)
     stm32bl_gpio_set(boot0_pin, true);
 
     /* Reset STM32 */
-    stm32bl_gpio_set(reset_pin, false);
-    stm32bl_delay(1U); /* 10ms low pulse */
     stm32bl_gpio_set(reset_pin, true);
+    stm32bl_delay(1U); /* 10ms low pulse */
+    stm32bl_gpio_set(reset_pin, false);
 
     /* Wait for bootloader to start */
     stm32bl_delay(1U);
@@ -189,9 +189,9 @@ stm32bl_status_t stm32bl_exit_bootloader(uint8_t boot0_pin, uint8_t reset_pin)
     stm32bl_gpio_set(boot0_pin, false);
 
     /* Reset STM32 */
-    stm32bl_gpio_set(reset_pin, false);
-    stm32bl_delay(1U); /* 10ms low pulse */
     stm32bl_gpio_set(reset_pin, true);
+    stm32bl_delay(1U); /* 10ms low pulse */
+    stm32bl_gpio_set(reset_pin, false);
 
     return STM32BL_OK;
 }
