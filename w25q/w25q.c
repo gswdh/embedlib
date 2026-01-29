@@ -5,6 +5,7 @@
  */
 
 #include "w25q.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -126,22 +127,14 @@ w25q_error_t w25q_read_status(w25q_handle_t *handle, uint8_t *status)
         return W25Q_ERROR_INVALID_PARAM;
     }
 
-    uint8_t cmd = W25Q_CMD_READ_STATUS1;
-    uint8_t response[2];
+    const uint8_t cmd = W25Q_CMD_READ_STATUS1;
 
-    w25q_error_t result = w25q_spi_tx(&cmd, 1);
+    w25q_error_t result = w25q_spi_tx_rx(&cmd, 1U, status, 1U);
     if (result != W25Q_OK)
     {
         return result;
     }
 
-    result = w25q_spi_rx(response, 2);
-    if (result != W25Q_OK)
-    {
-        return result;
-    }
-
-    *status = response[1];
     return W25Q_OK;
 }
 
@@ -194,27 +187,14 @@ w25q_error_t w25q_read_data(w25q_handle_t *handle, uint32_t address, uint8_t *da
         return W25Q_ERROR_INVALID_PARAM;
     }
 
-    uint8_t cmd_buffer[4];
+    uint8_t cmd_buffer[5];
     cmd_buffer[0] = W25Q_CMD_FAST_READ;
     cmd_buffer[1] = (uint8_t)((address >> 16) & 0xFF);
     cmd_buffer[2] = (uint8_t)((address >> 8) & 0xFF);
     cmd_buffer[3] = (uint8_t)(address & 0xFF);
+    cmd_buffer[4] = 0x00; /* Dummy byte needed for the fast read command */
 
-    w25q_error_t result = w25q_spi_tx(cmd_buffer, 4);
-    if (result != W25Q_OK)
-    {
-        return result;
-    }
-
-    // Send dummy byte for fast read
-    uint8_t dummy = 0;
-    result        = w25q_spi_tx(&dummy, 1);
-    if (result != W25Q_OK)
-    {
-        return result;
-    }
-
-    return w25q_spi_rx(data, size);
+    return w25q_spi_tx_rx(cmd_buffer, 5U, data, (const uint32_t)size);
 }
 
 w25q_error_t
