@@ -1,5 +1,6 @@
 #include "log.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -57,4 +58,87 @@ void log_message(int level, const char *tag, const char *fmt, ...)
     log_transmit((const char *)log_buffer);
 
     va_end(args);
+}
+
+void log_make_progress_bar(char          *bar_str,
+                           const uint32_t bar_str_len,
+                           const uint32_t num,
+                           const uint32_t den,
+                           const uint32_t width,
+                           const char    *units_str)
+{
+    static const char empty_str[] = "";
+
+    /* Parameter validation (MISRA: length checking, null checks) */
+    if ((bar_str == NULL) || (bar_str_len == 0U))
+    {
+        return;
+    }
+
+    /* Bar needs at least 2 chars for '[' and ']' */
+    if (width < 2U)
+    {
+        bar_str[0U] = '\0';
+        return;
+    }
+
+    /* Buffer must hold bar (width chars) plus null terminator */
+    if (bar_str_len <= width)
+    {
+        bar_str[0U] = '\0';
+        return;
+    }
+
+    /* Avoid division by zero */
+    if (den == 0U)
+    {
+        bar_str[0U] = '\0';
+        return;
+    }
+
+    if (units_str == NULL)
+    {
+        units_str = empty_str;
+    }
+
+    /* Integer-only progress: filled segment count in [0, width-2] */
+    uint32_t filled = (num * (width - 2U)) / den;
+    if (filled > (width - 2U))
+    {
+        filled = width - 2U;
+    }
+
+    /* Clear buffer (bounded by bar_str_len) */
+    (void)memset(bar_str, 0, (size_t)bar_str_len);
+
+    /* Draw bar: '[' + filled '=' + (width-2-filled) ' ' + ']' */
+    bar_str[0U] = '[';
+    if (filled > 0U)
+    {
+        (void)memset(bar_str + 1U, '=', (size_t)filled);
+    }
+    {
+        const uint32_t space_count = (width - 2U) - filled;
+        if (space_count > 0U)
+        {
+            (void)memset(bar_str + 1U + filled, ' ', (size_t)space_count);
+        }
+    }
+    bar_str[width - 1U] = ']';
+
+    /* Append numeric part with length check (no sprintf/strcat) */
+    {
+        const uint32_t tail_start = width;
+        const uint32_t tail_space = bar_str_len - width;
+
+        if (tail_space > 0U)
+        {
+            (void)snprintf(bar_str + tail_start,
+                           (size_t)tail_space,
+                           " %" PRIu32 " / %" PRIu32 " %s",
+                           num,
+                           den,
+                           units_str);
+        }
+    }
 }

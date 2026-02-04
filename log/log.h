@@ -31,5 +31,10 @@ void     log_transmit(const char *log);
 uint32_t log_get_time();
 void     log_set_level(int level);
 void     log_message(int level, const char *tag, const char *fmt, ...);
-
+void     log_make_progress_bar(char          *bar_str,
+                               const uint32_t bar_str_len,
+                               const uint32_t num,
+                               const uint32_t den,
+                               const uint32_t width,
+                               const char    *units_str);
 #endif

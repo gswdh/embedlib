@@ -424,16 +424,16 @@ ar_error_t ar_set_pin_function(const ar_pin_t pin, const ar_function_t function)
     }
 
     /* Clear previous configuration for this pin */
-    gpio_control1 &= (uint16_t)~pin_mask;              /* Clear output enable */
-    gpio_control1 &= (uint16_t)~(pin_mask << 4U);      /* Clear input disable */
-    gpio_control2 &= (uint16_t)~(0x03U << (pin * 2U)); /* Clear input select */
-    gpio_select &= (uint16_t)~(0x0FU << pin_shift);    /* Clear output select */
+    gpio_control1 &= (uint16_t)~pin_mask;               /* Clear output enable */
+    gpio_control1 &= (uint16_t) ~(pin_mask << 4U);      /* Clear input disable */
+    gpio_control2 &= (uint16_t) ~(0x03U << (pin * 2U)); /* Clear input select */
+    gpio_select &= (uint16_t) ~(0x0FU << pin_shift);    /* Clear output select */
 
     if (is_input_function)
     {
         /* Configure as input function */
         gpio_control1 |= (uint16_t)(1U << (pin + 4U)); /* Disable input buffer */
-        gpio_control1 &= (uint16_t)~(1U << pin);       /* Disable output driver */
+        gpio_control1 &= (uint16_t) ~(1U << pin);      /* Disable output driver */
 
         /* Map function to input select value */
         switch (function)
@@ -455,7 +455,7 @@ ar_error_t ar_set_pin_function(const ar_pin_t pin, const ar_function_t function)
         }
 
         /* Enable input buffer and set input select */
-        gpio_control1 &= (uint16_t)~(1U << (pin + 4U)); /* Enable input buffer */
+        gpio_control1 &= (uint16_t) ~(1U << (pin + 4U)); /* Enable input buffer */
         gpio_control2 |= (uint16_t)(function_value << (pin * 2U));
     }
     else if (is_output_function)
