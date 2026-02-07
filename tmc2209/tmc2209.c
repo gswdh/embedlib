@@ -44,6 +44,8 @@ static uint32_t        tmc_steps_per_rev = 400U;
 static uint32_t tmc_step_count  = 0U;
 static bool     tmc_is_stepping = false;
 
+static bool tmc_ramp_mode = false;
+
 /* ========================================================================== */
 /* PRIVATE HELPER FUNCTIONS                                                   */
 /* ========================================================================== */
@@ -143,7 +145,7 @@ static void tmc_ramp_engine(void)
 static float tmc2209_compute_step_frequency_rpm(float speed_rpm, uint16_t full_steps_per_rev)
 {
     /* Calculate step frequency: (RPM * full_steps_per_rev * microsteps_per_step) / 60 */
-    return (float)fabs((speed_rpm * (float)full_steps_per_rev * (float)256.0f) / 1200.0f);
+    return (float)fabs((speed_rpm * (float)full_steps_per_rev * (float)tmc_microstepping) / 60.0f);
 }
 
 /* ========================================================================== */
@@ -660,12 +662,21 @@ tmc_error_t tmc_enable_driver(bool enable)
 void tmc_set_direction(bool direction)
 {
     /* Set the direction pin */
-    tmc_gpio_dir_write(!direction);
+    tmc_gpio_dir_write(direction);
 }
 
 void tmc_set_speed(const float speed_rpm)
 {
     tmc_ramp.current_speed = speed_rpm;
+
+    if ((speed_rpm > 0.001f) || (speed_rpm < -0.001f))
+    {
+        tmc_is_stepping = true;
+    }
+    else
+    {
+        tmc_is_stepping = false;
+    }
 
     /* Set timer frequency for step generation */
     tmc_tim_step_freq(tmc2209_compute_step_frequency_rpm(speed_rpm, tmc_steps_per_rev));
@@ -713,6 +724,8 @@ tmc_error_t tmc_start_ramp(const float target, const float ramp_rate_rpm_per_sec
     tmc_ramp.ramping_active = true;
     tmc_ramp.ramp_tick      = tmc_ramp.ramp_start_tick;
 
+    tmc_ramp_mode = true;
+
     return TMC_OK;
 }
 
@@ -721,6 +734,8 @@ tmc_error_t tmc_stop_ramp(void)
     tmc_ramp.ramping_active = false;
 
     tmc_go(0.0f);
+
+    tmc_ramp_mode = false;
 
     return TMC_OK;
 }
@@ -747,6 +762,14 @@ void tmc_poll(void)
 {
     /* Process speed ramping engine */
     tmc_ramp_engine();
+
+    if (tmc_ramp_mode == false)
+    {
+        if (tmc_step_count == 0U)
+        {
+            tmc_go(0.0f);
+        }
+    }
 }
 
 /* ========================================================================== */

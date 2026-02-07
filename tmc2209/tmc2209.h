@@ -406,6 +406,8 @@ uint32_t tmc_get_tick(void);
 
 void tmc_delay_ms(uint32_t delay_ms);
 
+void tmc_step_timer_callback(void);
+
 /* ========================================================================== */
 /* INITIALIZATION AND CONFIGURATION FUNCTIONS                                */
 /* ========================================================================== */
@@ -651,6 +653,24 @@ void tmc_go(const float speed_rpm);
  * Handles direction changes automatically.
  */
 tmc_error_t tmc_start_ramp(const float target, const float ramp_rate_rpm_per_sec);
+
+/* ========================================================================== */
+/* ANGLE ROTATION FUNCTIONS                                                    */
+/* ========================================================================== */
+
+/**
+ * @brief Rotate angle
+ * @param turns Number of turns to rotate
+ * @param turns_per_second Turns per second
+ * @return TMC_OK on success, error code otherwise
+ *
+ * Rotates the motor by the specified number of turns at the specified speed.
+ */
+tmc_error_t tmc_start_rotate_angle(const float turns, const float turns_per_second);
+
+/* ========================================================================== */
+/* ENGINE FUNCTIONS                                                    */
+/* ========================================================================== */
 
 /**
  * @brief Poll function for non-blocking speed ramping

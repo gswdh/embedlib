@@ -176,11 +176,22 @@ stm32bl_status_t stm32bl_enter_bootloader(uint8_t boot0_pin, uint8_t reset_pin)
     stm32bl_gpio_set(reset_pin, false);
 
     /* Wait for bootloader to start */
-    stm32bl_delay(1U);
+    stm32bl_delay(10U);
 
     /* Verify bootloader communication */
-    uint8_t proto_ver;
-    return stm32bl_get_version(&proto_ver);
+    uint8_t proto_ver = 0x00;
+    for (uint8_t i = 0; i < 10; i++)
+    {
+        stm32bl_status_t result = stm32bl_get_version(&proto_ver);
+        if (result == STM32BL_OK)
+        {
+            return STM32BL_OK;
+        }
+
+        stm32bl_delay(10U);
+    }
+
+    return STM32BL_ERR_TIMEOUT;
 }
 
 stm32bl_status_t stm32bl_exit_bootloader(uint8_t boot0_pin, uint8_t reset_pin)
