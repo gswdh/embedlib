@@ -413,13 +413,16 @@ void tmc_delay_ms(uint32_t delay_ms);
 /**
  * @brief Initialize TMC2209 driver
  * @param serial_address TMC2209 node address (0-3)
+ * @param microstepping Microstep resolution from tmc_microstep_t enum (1-256, must be power of 2)
  * @return TMC_OK on success, error code otherwise
  *
  * Initializes the TMC2209 driver with default settings and verifies
  * communication. Sets up motor parameters and driver configuration.
  * This function must be called before using any other TMC2209 functions.
  */
-tmc_error_t tmc_init(const uint8_t serial_address);
+tmc_error_t tmc_init(const uint8_t         serial_address,
+                     const tmc_microstep_t microstepping,
+                     const uint32_t        steps_per_rev);
 
 /**
  * @brief Set TMC2209 node address

@@ -38,7 +38,11 @@ static tmc_ramp_t tmc_ramp = {0};
  */
 static uint8_t tmc_node_address = 0;
 
-static tmc_microstep_t tmc_microstepping = TMC_MICROSTEP_256;
+static tmc_microstep_t tmc_microstepping = TMC_MICROSTEP_16;
+static uint32_t        tmc_steps_per_rev = 400U;
+
+static uint32_t tmc_step_count  = 0U;
+static bool     tmc_is_stepping = false;
 
 /* ========================================================================== */
 /* PRIVATE HELPER FUNCTIONS                                                   */
@@ -209,12 +213,22 @@ tmc_error_t tmc_read_reg(const uint8_t node, const uint8_t addr, uint32_t *value
     return TMC_OK;
 }
 
+void tmc_step_timer_callback(void)
+{
+    if ((tmc_step_count > 0u) && (tmc_is_stepping == true))
+    {
+        tmc_step_count--;
+    }
+}
+
 /* ========================================================================== */
 /* INITIALIZATION AND CONFIGURATION FUNCTIONS                                */
 /* ========================================================================== */
 
 /* Initialize TMC2209 driver with default settings and verify communication */
-tmc_error_t tmc_init(const uint8_t serial_address)
+tmc_error_t tmc_init(const uint8_t         serial_address,
+                     const tmc_microstep_t microstepping,
+                     const uint32_t        steps_per_rev)
 {
     /* Initialize hardware interface */
     tmc_error_t error = tmc_hw_init();
@@ -232,6 +246,9 @@ tmc_error_t tmc_init(const uint8_t serial_address)
 
     /* Store node address */
     tmc_node_address = serial_address;
+
+    /* Store steps per revolution */
+    tmc_steps_per_rev = steps_per_rev;
 
     /* Initialize ramping state */
     memset(&tmc_ramp, 0, sizeof(tmc_ramp_t));
@@ -267,8 +284,9 @@ tmc_error_t tmc_init(const uint8_t serial_address)
         return TMC_ERROR_INIT;
     }
 
-    /* Set microstep resolution to 256 microsteps per step */
-    error = tmc_set_microsteps_per_step(TMC_MICROSTEP_256);
+    /* Set microstep resolution from parameter */
+    tmc_microstepping = microstepping;
+    error             = tmc_set_microsteps_per_step(microstepping);
     if (error != TMC_OK)
     {
         return TMC_ERROR_INIT;
@@ -314,9 +332,6 @@ tmc_error_t tmc_set_microsteps_per_step(tmc_microstep_t microsteps)
     {
         return TMC_ERROR_INVALID_PARAM;
     }
-
-    /* Update the global */
-    tmc_microstepping = microsteps;
 
     /* Calculate the microstep register value */
     uint8_t  mres = 0;
@@ -653,7 +668,7 @@ void tmc_set_speed(const float speed_rpm)
     tmc_ramp.current_speed = speed_rpm;
 
     /* Set timer frequency for step generation */
-    tmc_tim_step_freq(tmc2209_compute_step_frequency_rpm(speed_rpm, 400U));
+    tmc_tim_step_freq(tmc2209_compute_step_frequency_rpm(speed_rpm, tmc_steps_per_rev));
 }
 
 void tmc_set_velocity(const float speed_rpm)
@@ -697,6 +712,32 @@ tmc_error_t tmc_start_ramp(const float target, const float ramp_rate_rpm_per_sec
     tmc_ramp.ramp_end_tick  = (uint32_t)(ramp_period_s * 1000.f) + tmc_ramp.ramp_start_tick;
     tmc_ramp.ramping_active = true;
     tmc_ramp.ramp_tick      = tmc_ramp.ramp_start_tick;
+
+    return TMC_OK;
+}
+
+tmc_error_t tmc_stop_ramp(void)
+{
+    tmc_ramp.ramping_active = false;
+
+    tmc_go(0.0f);
+
+    return TMC_OK;
+}
+
+tmc_error_t tmc_start_rotate_angle(const float turns, const float turns_per_second)
+{
+    /* Make sure we're not doing something else */
+    tmc_stop_ramp();
+
+    /* Stop so that we don't have any residual steps */
+    tmc_go(0.0f);
+
+    /* Calculate the number of steps to take */
+    tmc_step_count = (uint32_t)(turns * (float)tmc_microstepping * tmc_steps_per_rev);
+
+    /* Set the speed to the desired speed */
+    tmc_go(turns_per_second * 60.0f);
 
     return TMC_OK;
 }
