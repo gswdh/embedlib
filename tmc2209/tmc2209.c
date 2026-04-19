@@ -259,7 +259,7 @@ tmc_error_t tmc_init(const uint8_t         serial_address,
     /* Verify communication */
     if (tmc_is_communicating() == false)
     {
-        return TMC_ERROR_INIT;
+        return TMC_ERROR_NO_COMMS;
     }
 
     /* Get version needs a delay for some reason */
@@ -269,21 +269,21 @@ tmc_error_t tmc_init(const uint8_t         serial_address,
     error = tmc_use_external_sense_resistors();
     if (error != TMC_OK)
     {
-        return TMC_ERROR_INIT;
+        return TMC_ERROR_SENSE_RESISTOR;
     }
 
     /* Set hold current to 10% */
     error = tmc_set_hold_current(10U);
     if (error != TMC_OK)
     {
-        return TMC_ERROR_INIT;
+        return TMC_ERROR_HOLD_CURRENT;
     }
 
     /* Set run current to 100% */
     error = tmc_set_run_current(100U);
     if (error != TMC_OK)
     {
-        return TMC_ERROR_INIT;
+        return TMC_ERROR_RUN_CURRENT;
     }
 
     /* Set microstep resolution from parameter */
@@ -291,7 +291,7 @@ tmc_error_t tmc_init(const uint8_t         serial_address,
     error             = tmc_set_microsteps_per_step(microstepping);
     if (error != TMC_OK)
     {
-        return TMC_ERROR_INIT;
+        return TMC_ERROR_MICROSTEPS;
     }
 
     return TMC_OK;

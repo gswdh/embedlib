@@ -121,13 +121,18 @@
  */
 typedef enum
 {
-    TMC_OK = 0,              /* Operation successful */
-    TMC_ERROR_INIT,          /* Initialization failed */
-    TMC_ERROR_UART,          /* UART communication error */
-    TMC_ERROR_INVALID_PARAM, /* Invalid parameter */
-    TMC_ERROR_CRC,           /* CRC checksum error */
-    TMC_ERROR_INVALID_RX,    /* Invalid response */
-    TMC_ERROR_TIMEOUT,       /* Operation timeout */
+    TMC_OK = 0,               /* Operation successful */
+    TMC_ERROR_INIT,           /* Initialization failed */
+    TMC_ERROR_UART,           /* UART communication error */
+    TMC_ERROR_INVALID_PARAM,  /* Invalid parameter */
+    TMC_ERROR_CRC,            /* CRC checksum error */
+    TMC_ERROR_INVALID_RX,     /* Invalid response */
+    TMC_ERROR_TIMEOUT,        /* Operation timeout */
+    TMC_ERROR_NO_COMMS,       /* Device not communicating */
+    TMC_ERROR_SENSE_RESISTOR, /* Failed to configure sense resistors */
+    TMC_ERROR_HOLD_CURRENT,   /* Failed to set hold current */
+    TMC_ERROR_RUN_CURRENT,    /* Failed to set run current */
+    TMC_ERROR_MICROSTEPS,     /* Failed to set microstep resolution */
 } tmc_error_t;
 
 /**
