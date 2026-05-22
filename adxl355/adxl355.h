@@ -130,6 +130,26 @@ typedef enum
 } adxl_range_t;
 
 /* -------------------------------------------------------------------------
+ * Acceleration scale factors (g per LSB of the 20-bit output)
+ * ------------------------------------------------------------------------- */
+#define ADXL_SCALE_2G (3.9e-6)
+#define ADXL_SCALE_4G (7.8e-6)
+#define ADXL_SCALE_8G (15.6e-6)
+
+/**
+ * @brief Resolve the g/LSB scale factor for a given range at compile time.
+ *
+ * Expands to a double constant. When @p range is a literal enum value the
+ * entire expression is folded by the compiler. Defaults to ADXL_SCALE_2G for
+ * any unrecognised range value.
+ *
+ * Example: double g = raw * ADXL_G_SCALE_FACTOR(ADXL_RANGE_4G); // 7.8e-6
+ */
+#define ADXL_G_SCALE_FACTOR(range) \
+    (((range) == ADXL_RANGE_4G) ? ADXL_SCALE_4G : \
+     (((range) == ADXL_RANGE_8G) ? ADXL_SCALE_8G : ADXL_SCALE_2G))
+
+/* -------------------------------------------------------------------------
  * ODR and low-pass filter corner (FILTER register bits [3:0])
  * ------------------------------------------------------------------------- */
 typedef enum

@@ -516,8 +516,7 @@ adxl_error_t adxl_fifo_read(adxl_accel_raw_t *samples, const uint8_t count,
         0x00U, 0x00U, 0x00U
     };
     uint8_t rx[ADXL_FIFO_BYTES_PER + 1U];
-    uint8_t sample_idx = 0U;
-    uint8_t triplet_i  = 0U;
+    uint8_t i;
 
     if ((samples == NULL) || (read_count == NULL))
     {
@@ -531,49 +530,35 @@ adxl_error_t adxl_fifo_read(adxl_accel_raw_t *samples, const uint8_t count,
 
     *read_count = 0U;
 
-    /* Each SPI transaction pops one 3-byte FIFO entry.  The x-axis marker
-     * (bit 0 of the third byte) identifies the start of each XYZ triplet. */
-    while (sample_idx < count)
+    /* The FIFO writes complete XYZ triplets atomically, so FIFO_ENTRIES is
+     * always a multiple of three and reads always start on an X entry.
+     * Read entries in fixed X-Y-Z order; no x-marker sync needed. */
+    for (i = 0U; i < count; i++)
     {
-        const adxl_error_t err = adxl_spi_transfer(
-            tx, rx, (uint8_t)(ADXL_FIFO_BYTES_PER + 1U));
+        adxl_error_t err;
 
+        err = adxl_spi_transfer(tx, rx, (uint8_t)(ADXL_FIFO_BYTES_PER + 1U));
         if (err != ADXL_OK)
         {
             return ADXL_ERR_FIFO_READ_COMM;
         }
+        samples[i].x = fifo_bytes_to_signed(rx[1], rx[2], rx[3]);
 
+        err = adxl_spi_transfer(tx, rx, (uint8_t)(ADXL_FIFO_BYTES_PER + 1U));
+        if (err != ADXL_OK)
         {
-            const uint8_t x_marker = (uint8_t)(rx[3] & 0x01U);
-
-            if (x_marker == 1U)
-            {
-                triplet_i = 0U;
-            }
-
-            if (triplet_i == 0U)
-            {
-                samples[sample_idx].x =
-                    fifo_bytes_to_signed(rx[1], rx[2], rx[3]);
-            }
-            else if (triplet_i == 1U)
-            {
-                samples[sample_idx].y =
-                    fifo_bytes_to_signed(rx[1], rx[2], rx[3]);
-            }
-            else
-            {
-                samples[sample_idx].z =
-                    fifo_bytes_to_signed(rx[1], rx[2], rx[3]);
-                *read_count = (uint8_t)(*read_count + 1U);
-                sample_idx++;
-            }
+            return ADXL_ERR_FIFO_READ_COMM;
         }
+        samples[i].y = fifo_bytes_to_signed(rx[1], rx[2], rx[3]);
 
-        if (triplet_i < 2U)
+        err = adxl_spi_transfer(tx, rx, (uint8_t)(ADXL_FIFO_BYTES_PER + 1U));
+        if (err != ADXL_OK)
         {
-            triplet_i++;
+            return ADXL_ERR_FIFO_READ_COMM;
         }
+        samples[i].z = fifo_bytes_to_signed(rx[1], rx[2], rx[3]);
+
+        *read_count = (uint8_t)(*read_count + 1U);
     }
 
     return ADXL_OK;

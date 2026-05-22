@@ -1,43 +1,90 @@
 #ifndef __STS__
 #define __STS__
 
-/**
- * @brief Calculate the arithmetic mean of a dataset
- * @param data Pointer to array of double values
- * @param len Number of elements in the data array
- * @return Arithmetic mean of the dataset, or 0.0 if len is 0
- *
- * Calculates the sum of all values divided by the number of elements.
- * Returns 0.0 if the length is zero to avoid division by zero.
- */
-double stats_mean(double *data, unsigned long len);
+#include <stdint.h>
+
+/* ---- double ---- */
 
 /**
- * @brief Calculate the standard deviation of a dataset
- * @param data Pointer to array of double values
- * @param len Number of elements in the data array
- * @return Standard deviation of the dataset, or 0.0 if len is 0 or 1
- *
- * Calculates the square root of the variance using the formula:
- * sqrt(sum((x - mean)²) / (n - 1)) for sample standard deviation
- * Returns 0.0 if length is zero or one (insufficient data for standard deviation).
+ * @brief Arithmetic mean of a double dataset.
+ * @param data Pointer to array of values.
+ * @param len  Number of elements.
+ * @return Mean, or 0.0 if len is 0.
  */
-double stats_stdev(double *data, unsigned long len);
+double stats_mean(const double *data, uint32_t len);
 
 /**
- * @brief Perform linear interpolation between two values
- * @param a First value (when coef = 0.0)
- * @param b Second value (when coef = 1.0)
- * @param coef Interpolation coefficient (0.0 to 1.0)
- * @return Interpolated value between a and b
- *
- * Performs linear interpolation using the formula:
- * result = a + coef * (b - a)
- *
- * When coef = 0.0, returns a
- * When coef = 1.0, returns b
- * When coef = 0.5, returns the midpoint between a and b
+ * @brief Sample standard deviation of a double dataset (N-1 denominator).
+ * @param data Pointer to array of values.
+ * @param len  Number of elements.
+ * @return Standard deviation, or 0.0 if len <= 1.
+ */
+double stats_stdev(const double *data, uint32_t len);
+
+/**
+ * @brief Linear interpolation between two doubles.
+ * @param a    Value at coef = 0.
+ * @param b    Value at coef = 1.
+ * @param coef Interpolation coefficient, clamped to [0, 1].
+ * @return Interpolated value.
  */
 double stats_linear_interp(double a, double b, double coef);
+
+/* ---- float ---- */
+
+/**
+ * @brief Arithmetic mean of a float dataset.
+ */
+float stats_mean_f32(const float *data, uint32_t len);
+
+/**
+ * @brief Sample standard deviation of a float dataset (N-1 denominator).
+ */
+float stats_stdev_f32(const float *data, uint32_t len);
+
+/**
+ * @brief Linear interpolation between two floats.
+ */
+float stats_linear_interp_f32(float a, float b, float coef);
+
+/* ---- int32_t ---- */
+
+/**
+ * @brief Arithmetic mean of an int32_t dataset.
+ * @return Mean as double.
+ */
+double stats_mean_i32(const int32_t *data, uint32_t len);
+
+/**
+ * @brief Sample standard deviation of an int32_t dataset (N-1 denominator).
+ * @return Standard deviation as double.
+ */
+double stats_stdev_i32(const int32_t *data, uint32_t len);
+
+/**
+ * @brief Linear interpolation between two int32_t values.
+ * @return Interpolated value as double.
+ */
+double stats_linear_interp_i32(int32_t a, int32_t b, double coef);
+
+/* ---- uint32_t ---- */
+
+/**
+ * @brief Arithmetic mean of a uint32_t dataset.
+ * @return Mean as double.
+ */
+double stats_mean_u32(const uint32_t *data, uint32_t len);
+
+/**
+ * @brief Sample standard deviation of a uint32_t dataset (N-1 denominator).
+ * @return Standard deviation as double.
+ */
+double stats_stdev_u32(const uint32_t *data, uint32_t len);
+
+/**
+ * @brief Linear interpolation between two uint32_t values.
+ * @return Interpolated value as double.
+ */
+double stats_linear_interp_u32(uint32_t a, uint32_t b, double coef);
 
 #endif
