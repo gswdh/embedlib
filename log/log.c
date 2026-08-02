@@ -4,6 +4,12 @@
 #include <stdio.h>
 #include <string.h>
 
+/* One formatted line, prefix included. 128 fit the PMC's short reports but
+ * truncated the MSP's register-dump lines; overridable per target. */
+#ifndef LOG_BUFFER_LEN
+#define LOG_BUFFER_LEN 256
+#endif
+
 static int current_log_level = LOG_LEVEL_INFO;
 
 static const char *log_level_strings[] = {"TRACE", "DEBUG", "INFO ", "WARN ", "ERROR", "FATAL"};
@@ -39,7 +45,7 @@ void log_message(int level, const char *tag, const char *fmt, ...)
 
     const uint32_t uptime = log_get_time();
 
-    char log_buffer[128];
+    char log_buffer[LOG_BUFFER_LEN];
     int  offset = 0;
     offset += snprintf(log_buffer + offset,
                        sizeof(log_buffer) - offset,

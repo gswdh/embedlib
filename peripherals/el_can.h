@@ -1,5 +1,5 @@
-#ifndef PERIPH_CAN_H
-#define PERIPH_CAN_H
+#ifndef EL_CAN_H
+#define EL_CAN_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -15,7 +15,7 @@ extern "C" {
  * includes a vendor header.
  *
  * Controllers are identified by a board-defined instance index of type
- * can_bus_t.  The instance is deliberately not called can_id_t: on CAN, "id"
+ * el_can_bus_t.  The instance is deliberately not called can_id_t: on CAN, "id"
  * means the arbitration identifier carried in every frame, and reusing the
  * word for the controller would make every call site ambiguous.
  *
@@ -23,78 +23,78 @@ extern "C" {
  *
  * Classic CAN and CAN FD share this interface.  A frame carries its own
  * format flags, so a bus configured for FD can still send classic frames, and
- * a classic-only controller rejects an FD frame with CAN_ERR_UNSUPPORTED
+ * a classic-only controller rejects an FD frame with EL_CAN_ERR_UNSUPPORTED
  * rather than silently truncating it.
  *
- * Bring-up is deliberately two-stage — can_init() then can_start().  Hardware
+ * Bring-up is deliberately two-stage — el_can_init() then el_can_start().  Hardware
  * acceptance filters can only be programmed while the controller is out of
  * the bus, so filters are installed between the two calls; a single init
  * would force every implementation to invent a re-entry into configuration
  * mode.
  *
  * Conventions shared by every peripheral header in this directory:
- *   - Functions return <mod>_error_t; CAN_OK is zero, all failures non-zero.
- *   - Timeouts are milliseconds; CAN_TIMEOUT_NONE polls once without blocking
- *     and CAN_TIMEOUT_FOREVER waits indefinitely.
+ *   - Functions return <mod>_error_t; EL_CAN_OK is zero, all failures non-zero.
+ *   - Timeouts are milliseconds; EL_CAN_TIMEOUT_NONE polls once without blocking
+ *     and EL_CAN_TIMEOUT_FOREVER waits indefinitely.
  *   - Callbacks run in interrupt context.
- *   - An unsupported optional feature returns CAN_ERR_UNSUPPORTED.
+ *   - An unsupported optional feature returns EL_CAN_ERR_UNSUPPORTED.
  * ------------------------------------------------------------------------- */
 
 /** @brief Board-defined controller index. */
-typedef uint32_t can_bus_t;
+typedef uint32_t el_can_bus_t;
 
-#define CAN_TIMEOUT_NONE    (0U)
-#define CAN_TIMEOUT_FOREVER (0xFFFFFFFFU)
+#define EL_CAN_TIMEOUT_NONE    (0U)
+#define EL_CAN_TIMEOUT_FOREVER (0xFFFFFFFFU)
 
 /**
- * @brief Largest payload a can_frame_t can hold.
+ * @brief Largest payload a el_can_frame_t can hold.
  *
  * Defaults to the CAN FD maximum.  A classic-only project can define it to 8
  * before including this header and save 56 bytes on every frame it stores,
  * which matters in a receive queue.
  */
-#ifndef CAN_MAX_PAYLOAD
-#define CAN_MAX_PAYLOAD (64U)
+#ifndef EL_CAN_MAX_PAYLOAD
+#define EL_CAN_MAX_PAYLOAD (64U)
 #endif
 
 /** @brief Payload limit of a classic CAN frame. */
-#define CAN_CLASSIC_MAX_PAYLOAD (8U)
+#define EL_CAN_CLASSIC_MAX_PAYLOAD (8U)
 
 /** @brief Identifier limits. */
-#define CAN_STD_ID_MAX (0x7FFU)
-#define CAN_EXT_ID_MAX (0x1FFFFFFFU)
+#define EL_CAN_STD_ID_MAX (0x7FFU)
+#define EL_CAN_EXT_ID_MAX (0x1FFFFFFFU)
 
 /* -------------------------------------------------------------------------
  * Error codes
  * ------------------------------------------------------------------------- */
 typedef enum
 {
-    CAN_OK = 0,
+    EL_CAN_OK = 0,
 
     /* Configuration and arguments */
-    CAN_ERR_UNSUPPORTED,     /* feature not offered by this platform       */
-    CAN_ERR_NOT_INITIALISED, /* can_init() has not succeeded for this bus  */
-    CAN_ERR_NOT_STARTED,     /* controller is configured but off the bus   */
-    CAN_ERR_ALREADY_STARTED, /* operation is only valid while stopped      */
-    CAN_ERR_NULL_PARAM,      /* mandatory pointer argument was NULL        */
-    CAN_ERR_BAD_BUS,         /* no such controller on this board           */
-    CAN_ERR_BAD_ID,          /* identifier outside the 11- or 29-bit range */
-    CAN_ERR_BAD_LENGTH,      /* payload longer than the format allows      */
-    CAN_ERR_BAD_PARAM,       /* value outside the encodable range          */
-    CAN_ERR_BAD_BITRATE,     /* no valid timing for the requested bitrate  */
-    CAN_ERR_NO_FILTER,       /* no acceptance filter slot left             */
+    EL_CAN_ERR_UNSUPPORTED,     /* feature not offered by this platform       */
+    EL_CAN_ERR_NOT_INITIALISED, /* el_can_init() has not succeeded for this bus  */
+    EL_CAN_ERR_NOT_STARTED,     /* controller is configured but off the bus   */
+    EL_CAN_ERR_ALREADY_STARTED, /* operation is only valid while stopped      */
+    EL_CAN_ERR_NULL_PARAM,      /* mandatory pointer argument was NULL        */
+    EL_CAN_ERR_BAD_BUS,         /* no such controller on this board           */
+    EL_CAN_ERR_BAD_ID,          /* identifier outside the 11- or 29-bit range */
+    EL_CAN_ERR_BAD_LENGTH,      /* payload longer than the format allows      */
+    EL_CAN_ERR_BAD_PARAM,       /* value outside the encodable range          */
+    EL_CAN_ERR_BAD_BITRATE,     /* no valid timing for the requested bitrate  */
+    EL_CAN_ERR_NO_FILTER,       /* no acceptance filter slot left             */
 
     /* Traffic */
-    CAN_ERR_TX_FULL,         /* every transmit mailbox is occupied         */
-    CAN_ERR_RX_EMPTY,        /* nothing waiting to be received             */
-    CAN_ERR_OVERRUN,         /* a received frame was lost                  */
-    CAN_ERR_TIMEOUT,         /* deadline passed before the frame moved     */
+    EL_CAN_ERR_TX_FULL,         /* every transmit mailbox is occupied         */
+    EL_CAN_ERR_RX_EMPTY,        /* nothing waiting to be received             */
+    EL_CAN_ERR_OVERRUN,         /* a received frame was lost                  */
+    EL_CAN_ERR_TIMEOUT,         /* deadline passed before the frame moved     */
 
     /* Bus condition */
-    CAN_ERR_BUS_OFF,         /* controller has taken itself off the bus    */
-    CAN_ERR_NO_ACK,          /* no other node acknowledged the frame       */
-    CAN_ERR_BUS              /* form, stuff, CRC or bit error on the wire  */
-} can_error_t;
+    EL_CAN_ERR_BUS_OFF,         /* controller has taken itself off the bus    */
+    EL_CAN_ERR_NO_ACK,          /* no other node acknowledged the frame       */
+    EL_CAN_ERR_BUS              /* form, stuff, CRC or bit error on the wire  */
+} el_can_error_t;
 
 /* -------------------------------------------------------------------------
  * Frames
@@ -103,19 +103,19 @@ typedef enum
 /**
  * @brief Frame format and attributes, usable as a bit mask.
  *
- * CAN_FLAG_FD selects the FD frame format; CAN_FLAG_BRS additionally switches
+ * EL_CAN_FLAG_FD selects the FD frame format; EL_CAN_FLAG_BRS additionally switches
  * to the faster data bitrate for the payload and is meaningless without it.
- * A remote frame (CAN_FLAG_RTR) has no payload and does not exist in FD.
+ * A remote frame (EL_CAN_FLAG_RTR) has no payload and does not exist in FD.
  */
 typedef enum
 {
-    CAN_FLAG_NONE     = 0U,
-    CAN_FLAG_EXTENDED = (1U << 0U), /* 29-bit identifier                   */
-    CAN_FLAG_RTR      = (1U << 1U), /* remote transmission request         */
-    CAN_FLAG_FD       = (1U << 2U), /* CAN FD format                       */
-    CAN_FLAG_BRS      = (1U << 3U), /* FD bitrate switch for the payload   */
-    CAN_FLAG_ESI      = (1U << 4U)  /* FD error-state indicator, RX only   */
-} can_flag_t;
+    EL_CAN_FLAG_NONE     = 0U,
+    EL_CAN_FLAG_EXTENDED = (1U << 0U), /* 29-bit identifier                   */
+    EL_CAN_FLAG_RTR      = (1U << 1U), /* remote transmission request         */
+    EL_CAN_FLAG_FD       = (1U << 2U), /* CAN FD format                       */
+    EL_CAN_FLAG_BRS      = (1U << 3U), /* FD bitrate switch for the payload   */
+    EL_CAN_FLAG_ESI      = (1U << 4U)  /* FD error-state indicator, RX only   */
+} el_can_flag_t;
 
 /**
  * @brief One CAN frame.
@@ -131,11 +131,11 @@ typedef enum
 typedef struct
 {
     uint32_t id;                     /* 11- or 29-bit, right-aligned       */
-    uint32_t flags;                  /* mask of can_flag_t                 */
+    uint32_t flags;                  /* mask of el_can_flag_t                 */
     uint8_t  len;                    /* payload bytes                      */
-    uint8_t  data[CAN_MAX_PAYLOAD];
+    uint8_t  data[EL_CAN_MAX_PAYLOAD];
     uint32_t timestamp;              /* receive time, implementation units */
-} can_frame_t;
+} el_can_frame_t;
 
 /* -------------------------------------------------------------------------
  * Configuration
@@ -144,18 +144,18 @@ typedef struct
 /**
  * @brief Controller operating mode.
  *
- * CAN_MODE_LISTEN_ONLY never drives the bus, not even an acknowledge bit,
+ * EL_CAN_MODE_LISTEN_ONLY never drives the bus, not even an acknowledge bit,
  * which is what makes it safe for passive monitoring of a live network.
  * The loopback modes are for self-test: internal loopback needs no
  * transceiver or partner node at all.
  */
 typedef enum
 {
-    CAN_MODE_NORMAL = 0,
-    CAN_MODE_LISTEN_ONLY,
-    CAN_MODE_LOOPBACK,          /* external: frames appear on the wire     */
-    CAN_MODE_LOOPBACK_INTERNAL  /* self-contained, bus untouched           */
-} can_mode_t;
+    EL_CAN_MODE_NORMAL = 0,
+    EL_CAN_MODE_LISTEN_ONLY,
+    EL_CAN_MODE_LOOPBACK,          /* external: frames appear on the wire     */
+    EL_CAN_MODE_LOOPBACK_INTERNAL  /* self-contained, bus untouched           */
+} el_can_mode_t;
 
 /**
  * @brief Bus configuration.
@@ -179,16 +179,16 @@ typedef struct
     uint32_t   data_bitrate_bps;
     uint16_t   sample_point_permille;
     uint16_t   data_sample_point_permille;
-    can_mode_t mode;
+    el_can_mode_t mode;
     bool       fd_enabled;
     bool       auto_retransmit;
     bool       auto_bus_off_recovery;
-} can_config_t;
+} el_can_config_t;
 
 /** @brief Classic CAN at @p bps, 87.5% sample point, normal mode. */
-#define CAN_CONFIG_CLASSIC(bps)                                                                    \
+#define EL_CAN_CONFIG_CLASSIC(bps)                                                                    \
     {                                                                                              \
-        (bps), 0U, 875U, 0U, CAN_MODE_NORMAL, false, true, true                                    \
+        (bps), 0U, 875U, 0U, EL_CAN_MODE_NORMAL, false, true, true                                    \
     }
 
 /* -------------------------------------------------------------------------
@@ -199,7 +199,7 @@ typedef struct
  * @brief One acceptance filter, in the id/mask form.
  *
  * A frame is accepted when (frame.id & mask) == (id & mask).  A mask of zero
- * therefore accepts everything, and a mask of CAN_EXT_ID_MAX matches one
+ * therefore accepts everything, and a mask of EL_CAN_EXT_ID_MAX matches one
  * identifier exactly.
  *
  * With no filters installed, a controller accepts every frame on the bus.
@@ -212,10 +212,10 @@ typedef struct
     uint32_t mask;
     bool     extended;   /* match 29-bit identifiers rather than 11-bit    */
     bool     match_rtr;  /* also accept remote frames matching id/mask     */
-} can_filter_t;
+} el_can_filter_t;
 
 /** @brief Accept every standard-identifier frame. */
-#define CAN_FILTER_ACCEPT_ALL()                                                                    \
+#define EL_CAN_FILTER_ACCEPT_ALL()                                                                    \
     {                                                                                              \
         0U, 0U, false, true                                                                        \
     }
@@ -234,22 +234,22 @@ typedef struct
  */
 typedef enum
 {
-    CAN_STATE_STOPPED = 0,
-    CAN_STATE_ERROR_ACTIVE,
-    CAN_STATE_ERROR_WARNING,
-    CAN_STATE_ERROR_PASSIVE,
-    CAN_STATE_BUS_OFF
-} can_state_t;
+    EL_CAN_STATE_STOPPED = 0,
+    EL_CAN_STATE_ERROR_ACTIVE,
+    EL_CAN_STATE_ERROR_WARNING,
+    EL_CAN_STATE_ERROR_PASSIVE,
+    EL_CAN_STATE_BUS_OFF
+} el_can_state_t;
 
 typedef struct
 {
-    can_state_t state;
+    el_can_state_t state;
     uint8_t     tx_error_count;
     uint8_t     rx_error_count;
     uint32_t    rx_overruns;      /* frames dropped for want of room       */
     uint32_t    tx_pending;       /* frames queued but not yet on the wire */
     uint32_t    rx_pending;       /* frames received but not yet read      */
-} can_status_t;
+} el_can_status_t;
 
 /* -------------------------------------------------------------------------
  * Callbacks.  All run in interrupt context.
@@ -260,10 +260,10 @@ typedef struct
  *
  * @p frame is valid only for the duration of the call; copy what is needed.
  */
-typedef void (*can_rx_callback_t)(const can_bus_t bus, const can_frame_t *frame, void *ctx);
+typedef void (*el_can_rx_callback_t)(const el_can_bus_t bus, const el_can_frame_t *frame, void *ctx);
 
 /** @brief Signals that a queued frame has been transmitted and acknowledged. */
-typedef void (*can_tx_callback_t)(const can_bus_t bus, void *ctx);
+typedef void (*el_can_tx_callback_t)(const el_can_bus_t bus, void *ctx);
 
 /**
  * @brief Reports a bus error or a change of error-confinement state.
@@ -273,9 +273,9 @@ typedef void (*can_tx_callback_t)(const can_bus_t bus, void *ctx);
  * @param[in] state The state after the event.
  * @param[in] ctx   Opaque pointer supplied at registration.
  */
-typedef void (*can_error_callback_t)(const can_bus_t   bus,
-                                     const can_error_t error,
-                                     const can_state_t state,
+typedef void (*el_can_error_callback_t)(const el_can_bus_t   bus,
+                                     const el_can_error_t error,
+                                     const el_can_state_t state,
                                      void             *ctx);
 
 /* -------------------------------------------------------------------------
@@ -285,44 +285,44 @@ typedef void (*can_error_callback_t)(const can_bus_t   bus,
 /**
  * @brief Configure controller @p bus and leave it off the bus.
  *
- * Install acceptance filters after this and before can_start().
+ * Install acceptance filters after this and before el_can_start().
  *
  * @param[in] bus Controller index.
  * @param[in] cfg Bus configuration; must not be NULL.
- * @return CAN_OK, or CAN_ERR_BAD_BITRATE if the requested timing cannot be
+ * @return EL_CAN_OK, or EL_CAN_ERR_BAD_BITRATE if the requested timing cannot be
  *         produced from the available clock.
  */
-can_error_t can_init(const can_bus_t bus, const can_config_t *cfg);
+el_can_error_t el_can_init(const el_can_bus_t bus, const el_can_config_t *cfg);
 
 /**
  * @brief Release the controller and its pins and clock.
  */
-can_error_t can_deinit(const can_bus_t bus);
+el_can_error_t el_can_deinit(const el_can_bus_t bus);
 
 /**
  * @brief Join the bus and begin transmitting and receiving.
  *
  * Returns once the controller is synchronised to the bus.
  */
-can_error_t can_start(const can_bus_t bus);
+el_can_error_t el_can_start(const el_can_bus_t bus);
 
 /**
  * @brief Leave the bus, discarding anything queued.
  *
- * The configuration survives, so filters can be changed and can_start()
+ * The configuration survives, so filters can be changed and el_can_start()
  * called again without a full re-init.
  */
-can_error_t can_stop(const can_bus_t bus);
+el_can_error_t el_can_stop(const el_can_bus_t bus);
 
 /**
  * @brief Recover from bus-off.
  *
  * Needed only when @c auto_bus_off_recovery was false.  Returns
- * CAN_ERR_BAD_PARAM if the controller is not actually bus-off.  Recovery
+ * EL_CAN_ERR_BAD_PARAM if the controller is not actually bus-off.  Recovery
  * still requires the standard 128 occurrences of 11 recessive bits, so the
  * bus must be healthy again for this to complete.
  */
-can_error_t can_recover(const can_bus_t bus);
+el_can_error_t el_can_recover(const el_can_bus_t bus);
 
 /* -------------------------------------------------------------------------
  * Acceptance filters
@@ -331,22 +331,22 @@ can_error_t can_recover(const can_bus_t bus);
 /**
  * @brief Install @p filter in slot @p index.
  *
- * Call while the controller is stopped; returns CAN_ERR_ALREADY_STARTED
- * otherwise.  Slot count is platform-defined — CAN_ERR_NO_FILTER means the
+ * Call while the controller is stopped; returns EL_CAN_ERR_ALREADY_STARTED
+ * otherwise.  Slot count is platform-defined — EL_CAN_ERR_NO_FILTER means the
  * hardware has run out.
  *
  * @param[in] bus    Controller index.
  * @param[in] index  Filter slot, counting from zero.
  * @param[in] filter Filter to install; must not be NULL.
  */
-can_error_t
-can_set_filter(const can_bus_t bus, const uint32_t index, const can_filter_t *filter);
+el_can_error_t
+el_can_set_filter(const el_can_bus_t bus, const uint32_t index, const el_can_filter_t *filter);
 
 /**
  * @brief Remove every filter, returning the controller to accepting all
  *        frames.
  */
-can_error_t can_clear_filters(const can_bus_t bus);
+el_can_error_t el_can_clear_filters(const el_can_bus_t bus);
 
 /* -------------------------------------------------------------------------
  * Traffic
@@ -358,45 +358,45 @@ can_error_t can_clear_filters(const can_bus_t bus);
  * Returns once the frame is accepted by a transmit mailbox, which is not the
  * same as it having reached the wire — CAN is arbitrated, so a low-priority
  * frame can wait indefinitely on a busy bus.  Register a transmit callback,
- * or watch can_get_status(), to know it actually went out.
+ * or watch el_can_get_status(), to know it actually went out.
  *
  * @param[in] bus        Controller index.
  * @param[in] frame      Frame to send; must not be NULL.
  * @param[in] timeout_ms How long to wait for a free mailbox.
- * @return CAN_OK, CAN_ERR_TX_FULL if no mailbox freed up in time, or
- *         CAN_ERR_BUS_OFF if the controller is not on the bus.
+ * @return EL_CAN_OK, EL_CAN_ERR_TX_FULL if no mailbox freed up in time, or
+ *         EL_CAN_ERR_BUS_OFF if the controller is not on the bus.
  */
-can_error_t
-can_send(const can_bus_t bus, const can_frame_t *frame, const uint32_t timeout_ms);
+el_can_error_t
+el_can_send(const el_can_bus_t bus, const el_can_frame_t *frame, const uint32_t timeout_ms);
 
 /**
  * @brief Take the oldest frame from the receive queue.
  *
  * An alternative to the receive callback, for a polled main loop.  With
- * CAN_TIMEOUT_NONE this returns CAN_ERR_RX_EMPTY immediately when nothing is
+ * EL_CAN_TIMEOUT_NONE this returns EL_CAN_ERR_RX_EMPTY immediately when nothing is
  * waiting, which is the normal way to drain the queue.
  *
  * @param[in]  bus        Controller index.
  * @param[out] frame      Destination; must not be NULL.
  * @param[in]  timeout_ms How long to wait for a frame.
  */
-can_error_t can_receive(const can_bus_t bus, can_frame_t *frame, const uint32_t timeout_ms);
+el_can_error_t el_can_receive(const el_can_bus_t bus, el_can_frame_t *frame, const uint32_t timeout_ms);
 
 /**
  * @brief Discard everything queued for transmission.
  */
-can_error_t can_flush_tx(const can_bus_t bus);
+el_can_error_t el_can_flush_tx(const el_can_bus_t bus);
 
 /* -------------------------------------------------------------------------
  * Callback registration.  Passing NULL for @p callback removes the handler.
  * ------------------------------------------------------------------------- */
 
-can_error_t can_set_rx_callback(const can_bus_t bus, const can_rx_callback_t callback, void *ctx);
+el_can_error_t el_can_set_rx_callback(const el_can_bus_t bus, const el_can_rx_callback_t callback, void *ctx);
 
-can_error_t can_set_tx_callback(const can_bus_t bus, const can_tx_callback_t callback, void *ctx);
+el_can_error_t el_can_set_tx_callback(const el_can_bus_t bus, const el_can_tx_callback_t callback, void *ctx);
 
-can_error_t
-can_set_error_callback(const can_bus_t bus, const can_error_callback_t callback, void *ctx);
+el_can_error_t
+el_can_set_error_callback(const el_can_bus_t bus, const el_can_error_callback_t callback, void *ctx);
 
 /* -------------------------------------------------------------------------
  * Status
@@ -407,10 +407,10 @@ can_set_error_callback(const can_bus_t bus, const can_error_callback_t callback,
  *
  * @param[out] status Destination; must not be NULL.
  */
-can_error_t can_get_status(const can_bus_t bus, can_status_t *status);
+el_can_error_t el_can_get_status(const el_can_bus_t bus, el_can_status_t *status);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* PERIPH_CAN_H */
+#endif /* EL_CAN_H */

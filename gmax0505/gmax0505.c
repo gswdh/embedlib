@@ -2,7 +2,7 @@
 
 #include <assert.h>
 
-#include "gpio.h"
+#include "el_gpio.h"
 #include "xil_printf.h"
 
 #include <stdio.h>
@@ -118,7 +118,7 @@ static void gmax_power_down(void)
 
 static void write_data_bit(bool value)
 {
-    gpio_write(SEN_SPI_MOSI, value);
+    el_gpio_write(SEN_SPI_MOSI, value);
     gpio_reset(SEN_SPI_CLK);
     gpio_set(SEN_SPI_CLK);
 }
@@ -135,7 +135,7 @@ static bool read_data_bit(void)
 {
     gpio_reset(SEN_SPI_CLK);
     gpio_set(SEN_SPI_CLK);
-    return gpio_read(SEN_SPI_MISO);
+    return el_gpio_read(SEN_SPI_MISO);
 }
 
 static uint8_t read_data_byte(void)
