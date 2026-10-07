@@ -12,6 +12,11 @@ static bool     g_row_time_cached    = false;
  * starts a frame. */
 static ar_trigger_mode_t g_trigger_mode = AR_TRIGGER_OFF;
 
+/* Pin mapped to AR_FUNC_TRIGGER_LOOPBACK (AR_PIN_MAX: none, TRIGGER comes
+ * down a wire), and whether frames are global reset frames. */
+static ar_pin_t g_trigger_loopback_pin = AR_PIN_MAX;
+static bool     g_global_reset         = false;
+
 void __attribute__((weak)) ar_set_nrst(const bool en)
 {
     assert(false && "AR driver interface has not been implemented.");
@@ -253,6 +258,11 @@ ar_error_t ar_init(const ar_reg_write_t *config, uint32_t len)
     // Wait to settle (at least 1600000 clock cycles)
     ar_delay_ms(10U);
 
+    /* The reset cleared the pin mapping and grr_control1 */
+    g_trigger_mode         = AR_TRIGGER_OFF;
+    g_trigger_loopback_pin = AR_PIN_MAX;
+    g_global_reset         = false;
+
     //  Set the register values
     ar_error_t error = ar_reg_init(config, len);
     if (error != AR_OK)
@@ -379,28 +389,83 @@ ar_error_t ar_set_trigger_mode(const ar_trigger_mode_t mode)
     return AR_OK;
 }
 
+/* One rising edge on the AR_FUNC_TRIGGER_LOOPBACK pin: its output select goes
+ * to a level that is high, then back to one that is low. */
+static ar_error_t ar_pulse_loopback_trigger(void)
+{
+    const uint16_t shift       = (uint16_t)((uint16_t)g_trigger_loopback_pin * 4U);
+    uint16_t       gpio_select = 0U;
+
+    ar_error_t error = ar_read_reg(AR_REG_GPIO_SELECT, &gpio_select);
+    if (error != AR_OK)
+    {
+        return error;
+    }
+    gpio_select &= (uint16_t) ~(0x0FU << shift);
+
+    error = ar_write_reg(AR_REG_GPIO_SELECT, gpio_select | (uint16_t)(AR_GPIO_OSEL_HIGH << shift));
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    return ar_write_reg(AR_REG_GPIO_SELECT, gpio_select | (uint16_t)(AR_GPIO_OSEL_LOW << shift));
+}
+
 /*
- * Start one frame. The pin modes pulse TRIGGER (AR_TRIGGER_PULSE_US wide);
- * AR_TRIGGER_SOFTWARE takes the sensor out of standby, which starts the
- * frame's integration at once. AR_TRIGGER_OFF has nothing to trigger.
+ * Start one frame. The pin modes put a rising edge on TRIGGER: a pulse
+ * AR_TRIGGER_PULSE_US wide through ar_set_trigger(), or over I2C on an
+ * AR_FUNC_TRIGGER_LOOPBACK pin. AR_TRIGGER_SOFTWARE takes the sensor out of
+ * standby, which starts the frame's integration at once. AR_TRIGGER_OFF has
+ * nothing to trigger.
+ *
+ * The sensor must be in standby: it ignores a trigger while a frame is in
+ * progress.
  */
 ar_error_t ar_trigger_frame(void)
 {
-    switch (g_trigger_mode)
+    if (g_trigger_mode == AR_TRIGGER_OFF)
     {
-    case AR_TRIGGER_OFF:
         return AR_ERROR_INVALID_CONFIG;
+    }
 
-    case AR_TRIGGER_SOFTWARE:
+    if (g_global_reset)
+    {
+        /* Only the first frame after GRR_MODE goes 0 -> 1 gets the FLASH (and
+         * SHUTTER) outputs: later ones are global reset frames with no
+         * strobe (measured Oct 2026; rewriting a set bit does not re-arm it).
+         * So every frame is made a first frame. */
+        uint16_t   grr   = 0U;
+        ar_error_t error = ar_read_reg(AR_REG_GRR_CONTROL1, &grr);
+        if (error == AR_OK)
+        {
+            error = ar_write_reg(AR_REG_GRR_CONTROL1, grr & (uint16_t)~AR_GRR_MODE);
+        }
+        if (error == AR_OK)
+        {
+            error = ar_write_reg(AR_REG_GRR_CONTROL1, grr | AR_GRR_MODE);
+        }
+        if (error != AR_OK)
+        {
+            return error;
+        }
+    }
+
+    if (g_trigger_mode == AR_TRIGGER_SOFTWARE)
+    {
         return ar_i2c_modify_reg(
             AR_REG_RESET_REGISTER, AR_RESET_REGISTER_STREAM, AR_RESET_REGISTER_STREAM);
-
-    default:
-        ar_set_trigger(true);
-        ar_delay_us(AR_TRIGGER_PULSE_US);
-        ar_set_trigger(false);
-        return AR_OK;
     }
+
+    if (g_trigger_loopback_pin < AR_PIN_MAX)
+    {
+        return ar_pulse_loopback_trigger();
+    }
+
+    ar_set_trigger(true);
+    ar_delay_us(AR_TRIGGER_PULSE_US);
+    ar_set_trigger(false);
+    return AR_OK;
 }
 
 /*
@@ -447,6 +512,51 @@ ar_error_t ar_set_flash(const ar_flash_mode_t mode, const uint16_t xenon_width_p
     }
 
     return ar_i2c_modify_reg(AR_REG_FLASH, flash, AR_FLASH_MODE_MASK);
+}
+
+/*
+ * Global reset release for triggered frames (a trigger mode other than
+ * AR_TRIGGER_OFF; call in standby). Every row is released from reset together
+ * - 1.34 ms after the trigger by the Developer Guide - instead of row after
+ * row, and the rows are still read out one after another, the first of them
+ * about 2 ms after the shutter time has run out. Light must therefore be
+ * confined to the shutter time, which is what the FLASH output marks with
+ * AR_FLASH_LED: high for the shutter time from the release (grr_control4,
+ * kept equal to the coarse integration time by ar_set_shutter_time_s()). The
+ * length of the light pulse is the exposure. Under light that stays on, rows
+ * are exposed for longer the later they are read out.
+ */
+ar_error_t ar_set_global_reset(const bool en)
+{
+    ar_error_t error = AR_OK;
+
+    if (en)
+    {
+        uint16_t rows = 0U;
+
+        /* No extra integration after the reset, strobe as long as the shutter */
+        error = ar_write_reg(AR_REG_GRR_CONTROL2, 0U);
+        if (error == AR_OK)
+        {
+            error = ar_read_reg(AR_REG_COARSE_INT, &rows);
+        }
+        if (error == AR_OK)
+        {
+            error = ar_write_reg(AR_REG_GRR_CONTROL4, rows);
+        }
+    }
+    if (error == AR_OK)
+    {
+        /* Left clear either way: ar_trigger_frame() sets the bit, per frame */
+        error = ar_i2c_modify_reg(AR_REG_GRR_CONTROL1, 0U, AR_GRR_MODE);
+    }
+    if (error != AR_OK)
+    {
+        return error;
+    }
+
+    g_global_reset = en;
+    return AR_OK;
 }
 
 ar_error_t ar_get_frame_length_lines(uint16_t *const lines)
@@ -572,10 +682,30 @@ ar_error_t ar_set_shutter_time_s(const float time_s)
     /* Convert row time from nanoseconds to seconds */
     const float row_time_s = (float)row_time_ns / 1000000000.0f;
 
-    /* Calculate number of rows needed for the desired shutter time */
-    const uint16_t reg_value = (uint16_t)(time_s / row_time_s);
+    /* Calculate number of rows needed for the desired shutter time. One row
+     * is the minimum (R0x1004): at 0 the rows are not reset at all. */
+    const float rows = time_s / row_time_s;
+    uint16_t    reg_value;
+    if (rows >= 65535.0f)
+    {
+        reg_value = 0xFFFFU;
+    }
+    else if (rows >= 1.0f)
+    {
+        reg_value = (uint16_t)rows;
+    }
+    else
+    {
+        reg_value = 1U;
+    }
 
     if (ar_write_reg(AR_REG_COARSE_INT, reg_value) != AR_OK)
+    {
+        return AR_ERROR_I2C_FAIL;
+    }
+
+    /* Global reset: the strobe spans the shutter time */
+    if (g_global_reset && (ar_write_reg(AR_REG_GRR_CONTROL4, reg_value) != AR_OK))
     {
         return AR_ERROR_I2C_FAIL;
     }
@@ -645,7 +775,19 @@ ar_error_t ar_set_pin_function(const ar_pin_t pin, const ar_function_t function)
     gpio_control2 &= (uint16_t) ~(0x03U << (pin * 2U)); /* Clear input select */
     gpio_select &= (uint16_t)~pin_mask;                 /* Clear output select */
 
-    if (is_input_function)
+    if (function == AR_FUNC_TRIGGER_LOOPBACK)
+    {
+        /* Driven and read back by the sensor itself: output driver and
+         * input buffer both on, idling low, the input mapped to TRIGGER. */
+        gpio_control1 |= (uint16_t)(1U << pin);
+        gpio_control2 |= (uint16_t)(2U << (pin * 2U));
+        gpio_select |= (uint16_t)(AR_GPIO_OSEL_LOW << pin_shift);
+    }
+    else if (function == AR_FUNC_UNUSED)
+    {
+        gpio_control1 |= (uint16_t)(1U << (pin + 4U)); /* Power down input buffer */
+    }
+    else if (is_input_function)
     {
         /* Configure as input function */
         gpio_control1 |= (uint16_t)(1U << (pin + 4U)); /* Disable input buffer */
@@ -729,11 +871,34 @@ ar_error_t ar_set_pin_function(const ar_pin_t pin, const ar_function_t function)
         gpio_select |= (uint16_t)(function_value << pin_shift);
     }
 
-    /* Write updated register values */
+    /* Write updated register values. A pin that will drive gets its output
+     * select before its driver, so it never drives the previous function's
+     * level; one that stops driving loses the driver first. The input
+     * mapping goes last, once the pin is at its new level: a loopback
+     * TRIGGER must not see an edge here. */
+    const bool drives = ((gpio_control1 & (uint16_t)(1U << pin)) != 0U);
+    if (drives)
+    {
+        error = ar_write_reg(AR_REG_GPIO_SELECT, gpio_select);
+        if (error != AR_OK)
+        {
+            return error;
+        }
+    }
+
     error = ar_write_reg(AR_REG_GPIO_CONTROL1, gpio_control1);
     if (error != AR_OK)
     {
         return error;
+    }
+
+    if (!drives)
+    {
+        error = ar_write_reg(AR_REG_GPIO_SELECT, gpio_select);
+        if (error != AR_OK)
+        {
+            return error;
+        }
     }
 
     error = ar_write_reg(AR_REG_GPIO_CONTROL2, gpio_control2);
@@ -742,10 +907,17 @@ ar_error_t ar_set_pin_function(const ar_pin_t pin, const ar_function_t function)
         return error;
     }
 
-    error = ar_write_reg(AR_REG_GPIO_SELECT, gpio_select);
-    if (error != AR_OK)
+    if (function == AR_FUNC_TRIGGER_LOOPBACK)
     {
-        return error;
+        g_trigger_loopback_pin = pin;
+    }
+    else if (g_trigger_loopback_pin == pin)
+    {
+        g_trigger_loopback_pin = AR_PIN_MAX;
+    }
+    else
+    {
+        /* Another pin's function: the loopback pin, if any, stays */
     }
 
     return AR_OK;

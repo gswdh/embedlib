@@ -68,12 +68,22 @@ typedef enum
     AR_FUNC_MD_STOP,
     AR_FUNC_NEW_ROW_PULSE,
     AR_FUNC_NEW_FRAME_PULSE,
+
+    /* TRIGGER input with no wire to it: the sensor drives the pin itself
+     * (output driver and input buffer both on) and ar_trigger_frame() pulses
+     * it over I2C. To the sensor it is an ordinary TRIGGER edge. */
+    AR_FUNC_TRIGGER_LOOPBACK,
+
+    /* Pin not used: output driver off, input buffer powered down. */
+    AR_FUNC_UNUSED,
     AR_FUNC_MAX
 } ar_function_t;
 
 /* Trigger modes. The pin modes are the slave modes of grr_control1 R0x30CE
- * (AND90149 "Slave Mode", Table 13): they take TRIGGER from a GPIO mapped to
- * AR_FUNC_TRIGGER, and ar_set_trigger_mode() sets gpi_en (R0x301A[8]),
+ * (AND90149 "Slave Mode", Table 13): they take TRIGGER, on its rising edge,
+ * from a GPIO mapped to AR_FUNC_TRIGGER (a wire, driven through
+ * ar_set_trigger()) or to AR_FUNC_TRIGGER_LOOPBACK (no wire, driven by the
+ * sensor itself), and ar_set_trigger_mode() sets gpi_en (R0x301A[8]),
  * without which no GPIO input function works. AR_TRIGGER_SOFTWARE needs no
  * pin: the sensor waits in standby, ar_trigger_frame() starts streaming over
  * I2C, and ar_trigger_readout_started() returns it to standby at the end of
@@ -90,11 +100,16 @@ typedef enum
 } ar_trigger_mode_t;
 
 /* FLASH (strobe) output behaviour, R0x3046, on a GPIO mapped to
- * AR_FUNC_FLASH. */
+ * AR_FUNC_FLASH. Measured on hardware (Oct 2026):
+ *  - rolling shutter, AR_FLASH_LED: high from the first row's integration
+ *    start to the end of the last row's readout.
+ *  - global reset (ar_set_global_reset()), AR_FLASH_LED: high for the
+ *    shutter time, starting as the rows are released from reset - the light
+ *    pulse that sets the exposure. */
 typedef enum
 {
     AR_FLASH_OFF = 0, /* output held low */
-    AR_FLASH_LED,     /* high while every row integrates: the exposure window */
+    AR_FLASH_LED,     /* high while the sensor integrates, see above */
     AR_FLASH_XENON,   /* fixed-width pulse at the start of that window */
     AR_FLASH_MAX
 } ar_flash_mode_t;
@@ -136,12 +151,19 @@ typedef enum
 #define AR_RESET_REGISTER_STANDBY_EOF (0x0010)
 #define AR_RESET_REGISTER_GPI_EN      (0x0100)
 
-/* grr_control1 slave-mode bits (Table 13) */
+/* grr_control1: global reset release (bit 0) and the slave-mode bits (Table 13) */
 #define AR_REG_GRR_CONTROL1    (0x30CE)
+#define AR_GRR_MODE            (0x0001) /* bit 0 */
 #define AR_GRR_SLAVE_MODE      (0x0010) /* bit 4 */
 #define AR_GRR_FRAME_START     (0x0020) /* bit 5 */
 #define AR_GRR_SLAVE_SH_SYNC   (0x0100) /* bit 8: surround view */
 #define AR_GRR_SLAVE_MODE_MASK (AR_GRR_SLAVE_MODE | AR_GRR_FRAME_START | AR_GRR_SLAVE_SH_SYNC)
+
+/* Global reset timing, in rows. grr_control2 adds to the integration after
+ * the reset (integration = coarse integration + grr_control2 + 6 rows);
+ * grr_control4 is the FLASH output's width with AR_FLASH_LED. */
+#define AR_REG_GRR_CONTROL2 (0x30D0)
+#define AR_REG_GRR_CONTROL4 (0x30DA)
 
 /* FLASH: en_flash (bit 8), invert (bit 7), xenon frames [5:3] and delay
  * [2:0]. FLASH2 is the xenon pulse width in pixel clocks. */
@@ -169,6 +191,14 @@ typedef enum
 #define AR_REG_GPIO_CONTROL1 (0x340A)
 #define AR_REG_GPIO_CONTROL2 (0x340C)
 #define AR_REG_GPIO_SELECT   (0x340E)
+
+/* Output selects that hold a pin at a fixed level, for AR_FUNC_TRIGGER_LOOPBACK.
+ * Measured on revision 0x2303 in standby, integration and readout: 9
+ * (md_motion, motion detection off) stays low and 2 (BOOT_STATUS[2]) stays
+ * high. 8 does not: the register reference calls 8/9 "drive zero/one", but
+ * 8 is PIXCLK - high in standby, a clock while streaming. */
+#define AR_GPIO_OSEL_LOW  (9U)
+#define AR_GPIO_OSEL_HIGH (2U)
 
 /* Clock and timing registers for row time calculation */
 #define AR_REG_LINE_LENGTH_PCK (0x300C)
@@ -201,6 +231,7 @@ ar_error_t ar_set_trigger_mode(const ar_trigger_mode_t mode);
 ar_error_t ar_trigger_frame(void);
 ar_error_t ar_trigger_readout_started(void);
 ar_error_t ar_set_flash(const ar_flash_mode_t mode, const uint16_t xenon_width_pck);
+ar_error_t ar_set_global_reset(const bool en);
 ar_error_t ar_get_frame_length_lines(uint16_t *const lines);
 ar_error_t ar_set_frame_length_lines(const uint16_t lines);
 ar_error_t ar_get_gain(float *gain_db);
