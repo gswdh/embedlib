@@ -321,6 +321,30 @@ tmc_error_t tmc_set_address(uint8_t address)
 /* MICROSTEP CONFIGURATION FUNCTIONS                                          */
 /* ========================================================================== */
 
+tmc_error_t tmc_init_standalone(const tmc_microstep_t microstepping, const uint32_t steps_per_rev)
+{
+    /* Initialize hardware interface: STEP timer, DIR and ENN */
+    const tmc_error_t error = tmc_hw_init();
+    if (error != TMC_OK)
+    {
+        return error;
+    }
+
+    /* No UART: the straps own the node address, microstepping and currents */
+    tmc_node_address  = 0U;
+    tmc_microstepping = microstepping;
+    tmc_steps_per_rev = steps_per_rev;
+
+    /* Initialize ramping state */
+    memset(&tmc_ramp, 0, sizeof(tmc_ramp_t));
+    tmc_ramp.ramping_active = false;
+    tmc_ramp_mode           = false;
+    tmc_step_count          = 0U;
+    tmc_is_stepping         = false;
+
+    return TMC_OK;
+}
+
 tmc_error_t tmc_set_microsteps_per_step(tmc_microstep_t microsteps)
 {
     /* Validate microsteps per step (must be power of 2, 1-256) */

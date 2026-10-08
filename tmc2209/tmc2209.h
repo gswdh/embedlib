@@ -439,6 +439,20 @@ tmc_error_t tmc_init(const uint8_t         serial_address,
  * Sets the TMC2209 node address by configuring MS1 and MS2 pins.
  * Address is encoded as: MS2(MSB) MS1(LSB)
  */
+/**
+ * @brief Initialise the driver for a TMC2209 in standalone mode (no UART)
+ *
+ * The MS1/MS2 straps, VREF and PDN_UART set microstepping, current and standstill
+ * behaviour in hardware; the firmware only has STEP, DIR and ENN. Everything the
+ * UART would configure is skipped; the step engine, ramping and rotate-by-angle
+ * work as with tmc_init().
+ *
+ * @param microstepping Microsteps per full step as strapped (MS1/MS2)
+ * @param steps_per_rev Full steps per motor revolution
+ * @return TMC_OK on success, the tmc_hw_init() error otherwise
+ */
+tmc_error_t tmc_init_standalone(const tmc_microstep_t microstepping, const uint32_t steps_per_rev);
+
 tmc_error_t tmc_set_address(uint8_t address);
 
 /* ========================================================================== */
