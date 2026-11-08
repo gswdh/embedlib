@@ -127,7 +127,7 @@ typedef enum
 #define AR_TRIGGER_PULSE_US (10U)
 
 #define AR_REG_GLOBAL_GAIN_MAX  (0x77)
-#define AR_REG_GLOBAL_GAIN_STEP (0.375)
+#define AR_REG_GLOBAL_GAIN_STEP (0.375f)
 
 #define AR_REG_FRAME_STATUS (0x2008)
 #define AR_REG_GPIO_SELECT  (0x340E)
