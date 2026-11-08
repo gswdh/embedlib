@@ -136,6 +136,15 @@ w25q_error_t w25q_read_status(w25q_handle_t *handle, uint8_t *status)
     return W25Q_OK;
 }
 
+/* Status reads made back to back before the wait starts sleeping. A page program
+ * takes the chip about 0.4 ms (3 ms worst) and a status read a few tens of
+ * microseconds, so this many polls covers a typical program without a single
+ * sleep; the platform's millisecond sleep has a whole-tick granularity that would
+ * otherwise cost every page program a millisecond or more. Erases (45 ms and up)
+ * run through the polls and then sleep, where the sleep's coarseness is lost in
+ * the noise. */
+#define W25Q_SPIN_POLLS (64U)
+
 w25q_error_t w25q_wait_busy(w25q_handle_t *handle, uint32_t timeout_ms)
 {
     if (!handle || !handle->initialised)
@@ -143,7 +152,8 @@ w25q_error_t w25q_wait_busy(w25q_handle_t *handle, uint32_t timeout_ms)
         return W25Q_ERROR_NOT_INITIALIZED;
     }
 
-    uint32_t start_time = 0;
+    uint32_t polls    = 0U;
+    uint32_t slept_ms = 0U;
     uint8_t  status;
 
     while (true)
@@ -159,12 +169,18 @@ w25q_error_t w25q_wait_busy(w25q_handle_t *handle, uint32_t timeout_ms)
             return W25Q_OK;
         }
 
-        if (start_time == 0)
+        if (polls < W25Q_SPIN_POLLS)
         {
-            start_time = 0; // Would need proper timer implementation
+            polls++;
+            continue;
         }
 
+        if (slept_ms >= timeout_ms)
+        {
+            return W25Q_ERROR_TIMEOUT;
+        }
         w25q_delay_ms(1);
+        slept_ms++;
     }
 }
 
