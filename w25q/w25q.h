@@ -27,6 +27,7 @@ extern "C"
 #define W25Q_TOTAL_SIZE      16777216U /* 16MB */
 #define W25Q_TOTAL_SECTORS   4096U
 #define W25Q_TOTAL_BLOCKS    256U
+#define W25Q_UNIQUE_ID_SIZE  8U /* bytes: the factory-programmed 64-bit unique ID */
 
 /* Status Register Bits */
 #define W25Q_SR_BUSY (1U << 0) /* Write In Progress */
@@ -114,6 +115,14 @@ extern "C"
      * @return W25Q_OK if successful, error code otherwise
      */
     w25q_error_t w25q_read_id(w25q_handle_t *handle, uint8_t *manufacturer_id, uint16_t *device_id);
+
+    /**
+     * @brief Read the factory-programmed 64-bit unique ID (Read Unique ID, 4Bh)
+     * @param handle Pointer to device handle
+     * @param id W25Q_UNIQUE_ID_SIZE bytes, most significant first
+     * @return W25Q_OK if successful, error code otherwise
+     */
+    w25q_error_t w25q_read_unique_id(w25q_handle_t *handle, uint8_t *id);
 
     /**
      * @brief Read status register

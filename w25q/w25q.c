@@ -118,6 +118,18 @@ w25q_error_t w25q_read_id(w25q_handle_t *handle, uint8_t *manufacturer_id, uint1
     return W25Q_OK;
 }
 
+w25q_error_t w25q_read_unique_id(w25q_handle_t *handle, uint8_t *id)
+{
+    if ((handle == NULL) || (handle->initialised == false) || (id == NULL))
+    {
+        return W25Q_ERROR_INVALID_PARAM;
+    }
+
+    /* The instruction, four dummy bytes, then the 64 bits most significant first */
+    const uint8_t cmd[5] = {W25Q_CMD_READ_UNIQUE_ID, 0U, 0U, 0U, 0U};
+    return w25q_spi_tx_rx(cmd, (uint32_t)sizeof(cmd), id, (uint32_t)W25Q_UNIQUE_ID_SIZE);
+}
+
 w25q_error_t w25q_read_status(w25q_handle_t *handle, uint8_t *status)
 {
     if (!handle || !handle->initialised || !status)
